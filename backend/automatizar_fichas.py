@@ -2,7 +2,6 @@ import os
 import re
 import io
 import sys
-import base64
 import datetime
 import subprocess
 from pathlib import Path
@@ -12,75 +11,67 @@ import pandas as pd
 import requests
 
 # ==========================================
-# CONFIGURACIÓN GENERAL
+# CONFIGURACIÓN
 # ==========================================
-# Si tienes el enlace público de compartir de OneDrive, colócalo aquí.
-# Si está vacío (None), el script usará el archivo de Excel local.
-ONEDRIVE_SHARE_LINK = None  
-
+ONEDRIVE_SHARE_LINK = "https://bcrpgob-my.sharepoint.com/:x:/g/personal/practicante_cnm2_bcrp_gob_pe/IQD6DWHDQYkuRZ_RbKo8gaTeATB0Fcw4koy2WIOTfCqdDlE?e=EoW35n"
 EXCEL_LOCAL_PATH = "PLAN ANUAL DE MANTENIMIENTO 2025 2.xlsx"
 CARPETA_SALIDA = "Fichas"
 
 
-# ==========================================
-# 1. LECTURA Y CONEXIÓN CON EL EXCEL
-# ==========================================
 def obtener_dataframe_excel(onedrive_link=None, local_path=None):
     """
-    Carga la hoja 'PLAN.MANT' desde una URL pública de OneDrive o un archivo local.
+    Carga la hoja 'PLAN.MANT' desde SharePoint/OneDrive o un respaldo local.
     """
     if onedrive_link:
         try:
-            print("🌐 Descargando Excel actualizado desde OneDrive...")
-            # Convertir URL de compartición a formato compatible con la API de OneDrive
-            base64_bytes = base64.b64encode(onedrive_link.encode("utf-8"))
-            base64_str = base64_bytes.decode("utf-8").strip("=").replace('/', '_').replace('+', '-')
-            direct_url = f"https://api.onedrive.com/v1.0/shares/u!{base64_str}/root/content"
+            print("🌐 Intentando descargar Excel desde SharePoint/OneDrive...")
+            # Forzar parámetro de descarga directa para SharePoint
+            direct_url = onedrive_link.replace("?e=", "&download=1?e=") if "?e=" in onedrive_link else onedrive_link + "&download=1"
             
             resp = requests.get(direct_url, timeout=15)
             if resp.status_code == 200:
                 excel_bytes = io.BytesIO(resp.content)
                 df = pd.read_excel(excel_bytes, sheet_name='PLAN.MANT', skiprows=9)
-                print(" Excel descargado exitosamente desde la nube.")
+                print(" Excel cargado exitosamente desde la nube.")
                 return df
             else:
-                print(f"⚠️ No se pudo descargar desde OneDrive (Código HTTP {resp.status_code}). Usando respaldo local...")
+                print(f"⚠️ No se pudo acceder vía URL directa (Status {resp.status_code}). Recurriendo al archivo local...")
         except Exception as e:
-            print(f"⚠️ Error al conectar con OneDrive ({e}). Usando respaldo local...")
+            print(f"⚠️ Error al conectar con SharePoint ({e}). Recurriendo al archivo local...")
 
-    # Carga desde archivo local
     if local_path and os.path.exists(local_path):
-        print(f"📂 Cargando Excel local: {local_path}")
+        print(f"📂 Cargando archivo local: {local_path}")
         return pd.read_excel(local_path, sheet_name='PLAN.MANT', skiprows=9)
     else:
-        raise FileNotFoundError("No se encontró el archivo Excel local ni se pudo acceder a OneDrive.")
+        raise FileNotFoundError("No se pudo obtener el Excel desde la nube ni se encontró el archivo local.")
 
 
-def extraer_datos_mantenimiento(df, codigo_maquina):
+def extraer_datos_mantenimiento(df, identificador_maquina):
     """
-    Busca la fila correspondiente al código de la máquina y consolida la información.
+    Búsqueda híbrida: busca por código entre paréntesis o por coincidencia de texto en el nombre.
     """
     fila_encontrada = None
+    identificador_clean = str(identificador_maquina).strip().upper()
     
     for idx, row in df.iterrows():
-        nombre_maquina = str(row.iloc[1])
-        if str(codigo_maquina) in nombre_maquina:
+        nombre_excel = str(row.iloc[1]).strip().upper()
+        if identificador_clean in nombre_excel:
             fila_encontrada = row
             break
             
     if fila_encontrada is None:
-        raise ValueError(f"No se encontró la máquina con código '{codigo_maquina}' en la hoja de Excel.")
+        raise ValueError(f"No se encontró la máquina '{identificador_maquina}' en la hoja de Excel.")
     
-    # A. Orden de Trabajo (Extraída desde la columna Observaciones, ej: 'Realizado con OSS28025')
+    # 1. Orden de Trabajo
     obs = str(fila_encontrada.iloc[11]) if pd.notna(fila_encontrada.iloc[11]) else ""
     ot_match = re.search(r'OSS\d+', obs)
     orden_trabajo = ot_match.group(0) if ot_match else "S/N"
     
-    # B. Horas Utilizadas (Horas-Hombre Reales)
+    # 2. Horas Utilizadas
     horas = fila_encontrada.iloc[10]
     horas_str = f"{horas} HORAS" if pd.notna(horas) else "0 HORAS"
     
-    # C. Fecha de Ejecución
+    # 3. Fecha de Ejecución
     fecha_val = fila_encontrada.iloc[13]
     if isinstance(fecha_val, (datetime.datetime, pd.Timestamp)):
         meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", 
@@ -89,7 +80,7 @@ def extraer_datos_mantenimiento(df, codigo_maquina):
     else:
         fecha_str = "DICIEMBRE - 2025"
         
-    # D. Técnicos Responsables (Evaluación de las columnas Tecnico 1 a Tecnico 4)
+    # 4. Técnicos Responsables (Tecnico 1 al 4)
     tecnicos = []
     cols_tecnicos = ['Tecnico 1', 'Tecnico 2', 'Tecnico 3', 'Tecnico 4']
     
@@ -109,14 +100,7 @@ def extraer_datos_mantenimiento(df, codigo_maquina):
     }
 
 
-# ==========================================
-# 2. EDICIÓN DEL DOCUMENTO WORD
-# ==========================================
 def actualizar_plantilla_word(docx_input, output_docx_path, datos):
-    """
-    Edita únicamente las 4 secciones variables en la plantilla Word manteniendo el formato intacto.
-    Soporta docx_input como ruta de archivo (str) o como flujo de bytes (io.BytesIO).
-    """
     doc = docx.Document(docx_input)
     
     for paragraph in doc.paragraphs:
@@ -132,103 +116,68 @@ def actualizar_plantilla_word(docx_input, output_docx_path, datos):
             paragraph.text = f"HORAS UTILIZADAS\t  {datos['horas']}"
             
     doc.save(output_docx_path)
-    print(f" Documento Word generado: {output_docx_path}")
 
 
-# ==========================================
-# 3. CONVERSIÓN MULTIPLATAFORMA A PDF
-# ==========================================
 def convertir_a_pdf(docx_path, folder_salida):
-    """
-    Convierte el archivo .docx a .pdf adaptándose al sistema operativo (Linux vs Windows).
-    """
     docx_path = Path(docx_path)
     folder_salida = Path(folder_salida)
     
-    # Entorno Linux (GitHub Codespaces / Servidores Cloud)
     if sys.platform.startswith('linux'):
         try:
             subprocess.run([
                 'libreoffice', '--headless', '--convert-to', 'pdf',
                 str(docx_path), '--outdir', str(folder_salida)
             ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            pdf_path = folder_salida / f"{docx_path.stem}.pdf"
-            print(f" PDF generado con LibreOffice: {pdf_path}")
         except Exception as e:
-            print(f"⚠️ Error al generar PDF con LibreOffice en Linux: {e}")
-            print("Asegúrate de haber instalado LibreOffice (`sudo apt-get install libreoffice`).")
-            
-    # Entorno Windows (Equipo local)
+            print(f"⚠️ Error LibreOffice: {e}")
     elif sys.platform.startswith('win'):
         try:
             from docx2pdf import convert
             pdf_path = folder_salida / f"{docx_path.stem}.pdf"
             convert(str(docx_path), str(pdf_path))
-            print(f" PDF generado con Word/docx2pdf: {pdf_path}")
         except Exception as e:
-            print(f"⚠️ Error al convertir a PDF en Windows: {e}")
+            print(f"⚠️ Error docx2pdf: {e}")
 
 
-# ==========================================
-# 4. FLUJO PRINCIPAL DE EJECUCIÓN
-# ==========================================
-def procesar_ficha(docx_plantilla, onedrive_link=None, excel_local=EXCEL_LOCAL_PATH, carpeta_destino=CARPETA_SALIDA):
-    """
-    Función orquestadora principal.
-    """
-    # Crear carpeta de destino
+def procesar_ficha(docx_plantilla, onedrive_link=ONEDRIVE_SHARE_LINK, excel_local=EXCEL_LOCAL_PATH, carpeta_destino=CARPETA_SALIDA):
     Path(carpeta_destino).mkdir(exist_ok=True, parents=True)
     
-    # 1. Identificar el Código de la Máquina desde la plantilla subida/leída
     doc = docx.Document(docx_plantilla)
-    codigo_maquina = None
+    identificador = None
     
+    # Intento 1: Extraer código entre paréntesis (ej. 60010)
     for p in doc.paragraphs:
         if "CODIGO DE LA MAQUINA" in p.text:
             match = re.search(r'\((\d+)\)', p.text)
             if match:
-                codigo_maquina = match.group(1)
+                identificador = match.group(1)
                 break
-                
-    if not codigo_maquina:
-        # Intento de rescate desde el nombre del archivo
-        nombre_archivo = Path(docx_plantilla).name if isinstance(docx_plantilla, (str, Path)) else ""
-        match_file = re.search(r'\(.*?(\d{5}).*?\)', nombre_archivo)
-        codigo_maquina = match_file.group(1) if match_file else "60010"
+            else:
+                # Intento 2: Extraer texto después de los dos puntos
+                partes = p.text.split(":")
+                if len(partes) > 1 and partes[1].strip():
+                    identificador = partes[1].strip()
+                    break
+                    
+    if not identificador:
+        identificador = "60010"
         
-    print(f"\n🔍 Procesando plantilla para máquina Código: {codigo_maquina}")
+    print(f"\n🔍 Buscando información para: {identificador}")
     
-    # 2. Leer la matriz Excel
     df_excel = obtener_dataframe_excel(onedrive_link, excel_local)
+    datos = extraer_datos_mantenimiento(df_excel, identificador)
     
-    # 3. Extraer nuevos datos operativos
-    datos_actualizados = extraer_datos_mantenimiento(df_excel, codigo_maquina)
-    print(f"📋 Datos obtenidos: OT={datos_actualizados['orden_trabajo']} | Fecha={datos_actualizados['fecha']} | Horas={datos_actualizados['horas']} | Técnicos={datos_actualizados['tecnico']}")
+    nombre_salida = f"{datos['orden_trabajo']} ({identificador})_ACTUALIZADO"
+    ruta_docx = Path(carpeta_destino) / f"{nombre_salida}.docx"
     
-    # 4. Generar nuevo archivo Word en la carpeta "Fichas"
-    nombre_salida_base = f"{datos_actualizados['orden_trabajo']} ({codigo_maquina})_ACTUALIZADO"
-    ruta_docx_salida = Path(carpeta_destino) / f"{nombre_salida_base}.docx"
+    actualizar_plantilla_word(docx_plantilla, ruta_docx, datos)
+    convertir_a_pdf(ruta_docx, carpeta_destino)
     
-    actualizar_plantilla_word(docx_plantilla, ruta_docx_salida, datos_actualizados)
-    
-    # 5. Exportar a PDF
-    convertir_a_pdf(ruta_docx_salida, carpeta_destino)
+    print(f" Procesamiento finalizado para {identificador}.")
+    return ruta_docx, Path(carpeta_destino) / f"{nombre_salida}.pdf"
 
 
-# ==========================================
-# PUNTO DE ENTRADA (PRUEBA DE EJECUCIÓN)
-# ==========================================
 if __name__ == "__main__":
-    # Ruta de la plantilla Word a procesar (puedes cambiarla por cualquier ficha subida)
-    PLANTILLA_EJEMPLO = "plantillas/OSS28025 (APILADOR ELÉCTRICO FN 1225 60010).docx"
-    
-    # Si la plantilla está en la raíz directamente, ajustar la ruta:
-    if not os.path.exists(PLANTILLA_EJEMPLO) and os.path.exists("OSS28025 (APILADOR ELÉCTRICO FN 1225 60010).docx"):
-        PLANTILLA_EJEMPLO = "OSS28025 (APILADOR ELÉCTRICO FN 1225 60010).docx"
-        
-    procesar_ficha(
-        docx_plantilla=PLANTILLA_EJEMPLO,
-        onedrive_link=ONEDRIVE_SHARE_LINK,
-        excel_local=EXCEL_LOCAL_PATH,
-        carpeta_destino=CARPETA_SALIDA
-    )
+    PLANTILLA = "OSS28025 (APILADOR ELÉCTRICO FN 1225 60010).docx"
+    if os.path.exists(PLANTILLA):
+        procesar_ficha(PLANTILLA)
