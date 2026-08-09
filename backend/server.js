@@ -13,6 +13,8 @@ const PORT = process.env.PORT || 8000;
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+
+
 app.use(cors());
 app.use(express.json());
 
@@ -121,7 +123,8 @@ app.post('/api/generar-ficha', upload.single('file'), async (req, res) => {
             tecnico3: req.body.tecnico3 || '',
             tecnico4: req.body.tecnico4 || '',
             fecha: req.body.fecha || '',
-            horas: req.body.horas || ''
+            horas: req.body.horas || '',
+            diagnostico: req.body.diagnostico || ''
         };
 
         const resultado = await procesarFicha(req.file.buffer, datosFormulario);

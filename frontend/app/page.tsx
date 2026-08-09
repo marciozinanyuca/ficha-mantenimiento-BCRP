@@ -232,7 +232,7 @@ export default function Home() {
 
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `${ordenTrabajo || 'Ficha'}_ACTUALIZADO.docx`;
+      a.download = `${ordenTrabajo || 'Ficha'} (${codigo || 'Maquina'}).docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();

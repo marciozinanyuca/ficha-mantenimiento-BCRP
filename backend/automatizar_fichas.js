@@ -136,7 +136,7 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
     // Busca todo lo que esté entre "DIAGNOSTICO DE FALLA" y "OPERACION" (con o sin tilde)
     const regexDiagnostico = /DIAGNOSTICO\s+DE\s+FALLA\s*([\s\S]*?)(?=OPERACI[OÓ]N)/i;
     const matchDiagnostico = textoWord.match(regexDiagnostico);
-    
+
     if (matchDiagnostico && matchDiagnostico[1]) {
         // Reemplaza múltiples espacios y saltos de línea por un solo espacio limpio
         diagnosticoDetectado = matchDiagnostico[1].replace(/\s+/g, ' ').trim();
@@ -328,21 +328,21 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
 
 
 
-// 2. REEMPLAZO DE TÉCNICOS (Método de Ancla con Expansión Automática de Cuadro)
+        // 2. REEMPLAZO DE TÉCNICOS (Método de Ancla con Expansión Automática de Cuadro)
         const listaTecnicosArr = [datos.tecnico1, datos.tecnico2, datos.tecnico3, datos.tecnico4]
             .filter(t => t && String(t).trim() !== '')
             .map(t => String(t).trim().toUpperCase());
 
         const nombresViejos = /DANIEL CELIS|MIGUEL GUERRERO|JORGE LOZANO|RAUL CONSTANTINI|C[EÉ]SAR VELASQUEZ/gi;
-        
+
         // PASO 1: Limpiamos los nombres viejos y dejamos el Ancla.
         let primerReemplazoHecho = false;
         documentXml = documentXml.replace(nombresViejos, (match) => {
             if (!primerReemplazoHecho) {
                 primerReemplazoHecho = true;
-                return "[[ANCLA_TEC]]" + conservarEtiquetas(match); 
+                return "[[ANCLA_TEC]]" + conservarEtiquetas(match);
             } else {
-                return conservarEtiquetas(match); 
+                return conservarEtiquetas(match);
             }
         });
 
@@ -350,10 +350,10 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
         if (documentXml.includes("[[ANCLA_TEC]]")) {
             const partesAncla = documentXml.split("[[ANCLA_TEC]]");
             const tec1 = listaTecnicosArr.length > 0 ? listaTecnicosArr[0] : " ";
-            
+
             // --- NUEVO PASO ESTRELLA: HACER QUE EL CUADRO SE ESTIRE HACIA ABAJO ---
             // Buscamos hacia atrás dónde empieza la fila de la tabla (<w:tr)
-            const indexUltimaFila = partesAncla[0].lastIndexOf('<w:tr'); 
+            const indexUltimaFila = partesAncla[0].lastIndexOf('<w:tr');
             if (indexUltimaFila !== -1) {
                 let fragmentoFila = partesAncla[0].substring(indexUltimaFila);
                 // Cambiamos la altura de "exacta" a "automática" solo para esta fila
@@ -374,7 +374,7 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
                 for (let i = 1; i < listaTecnicosArr.length; i++) {
                     parrafosExtra += `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>${rPrText}<w:t>${listaTecnicosArr[i]}</w:t></w:r></w:p>`;
                 }
-                
+
                 // Buscamos el final de la línea actual para inyectarlos debajo
                 const indexFinParrafo = xmlPosterior.indexOf('</w:p>');
                 if (indexFinParrafo !== -1) {
@@ -386,7 +386,7 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
             // PASO 3: Unimos todo con el primer técnico en su lugar
             documentXml = partesAncla[0] + tec1 + xmlPosterior;
         }
-        
+
 
         // 3. REEMPLAZO DE FECHA DE EJECUCIÓN (Convertido a Mayúsculas)
         const fechaNueva = datos.fecha && String(datos.fecha).trim() !== ""
@@ -442,6 +442,78 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
             });
         }
 
+
+
+
+
+  // 5. REEMPLAZO DE DIAGNÓSTICO DE FALLA (Método Híbrido: Espacios + Enter + Espacios)
+        const diagnosticoRaw = datos.diagnostico && String(datos.diagnostico).trim() !== ""
+            ? String(datos.diagnostico).trim().toUpperCase()
+            : " ";
+
+        // 5.1 Dividimos el texto respetando el límite de 55 caracteres
+        const palabras = diagnosticoRaw.split(' ');
+        let lineas = [];
+        let lineaActual = "";
+        
+        palabras.forEach(palabra => {
+            if ((lineaActual + palabra).length > 55) { 
+                lineas.push(lineaActual.trim());
+                lineaActual = palabra + " ";
+            } else {
+                lineaActual += palabra + " ";
+            }
+        });
+        if (lineaActual.trim() !== "") lineas.push(lineaActual.trim());
+
+        // 5.2 Construimos el XML inyectando exactamente los espacios y el ENTER solicitados
+        let textoFinalXml = "";
+        lineas.forEach((linea, i) => {
+            if (i === 0) {
+                textoFinalXml += "        " + linea; // 8 espacios para la primera línea
+            } else {
+                // 52 espacios al final + ENTER real de Word (<w:br/>) + 51 espacios al inicio de la nueva
+                textoFinalXml += " ".repeat(52) + '</w:t><w:br/><w:t xml:space="preserve">' + " ".repeat(51) + linea;
+            }
+        });
+
+        // 5.3 Inyectamos en el documento
+        const regexDiagTitle = /DIAGNOSTICO(?:<[^>]+>|[\s\t\r\n])*DE(?:<[^>]+>|[\s\t\r\n])*FALLA/i;
+        const matchTitle = documentXml.match(regexDiagTitle);
+
+        if (matchTitle) {
+            const indexInicio = matchTitle.index + matchTitle[0].length;
+            const indexFinOffset = documentXml.substring(indexInicio).search(/OPERACI[OÓ]N/i);
+            
+            if (indexFinOffset !== -1) {
+                const posicionRealFin = indexInicio + indexFinOffset;
+                let bloqueAfectado = documentXml.substring(indexInicio, posicionRealFin);
+                let diagInsertado = false;
+
+                bloqueAfectado = bloqueAfectado.replace(/(<w:t[^>]*>)([^<]*?)(<\/w:t>)/gi, (m, openTag, texto, closeTag) => {
+                    if (texto.trim() === "" || /^[:\s]*$/.test(texto)) return m;
+                    
+                    if (!diagInsertado) {
+                        diagInsertado = true;
+                        
+                        // Aseguramos que el tag de apertura respete todos los espacios en blanco
+                        let tagConEspacios = openTag.includes('xml:space') 
+                            ? openTag 
+                            : openTag.replace('>', ' xml:space="preserve">');
+                            
+                        return `${tagConEspacios}${textoFinalXml}${closeTag}`; 
+                    } else {
+                        return `${openTag}${closeTag}`; 
+                    }
+                });
+
+                documentXml = documentXml.substring(0, indexInicio) + bloqueAfectado + documentXml.substring(posicionRealFin);
+            }
+        }
+
+
+
+
         zip.file("word/document.xml", documentXml);
 
         return zip.generate({
@@ -461,7 +533,12 @@ async function procesarFicha(docxBufferInput, datosPersonalizados) {
     }
 
     const nuevoBufferWord = await actualizarPlantillaWord(docxBufferInput, datosPersonalizados);
-    const nombreSalida = `${datosPersonalizados.orden_trabajo} (${datosPersonalizados.codigo || 'Ficha'})_ACTUALIZADO`;
+    
+    // AQUÍ ACTUALIZAMOS EL FORMATO DEL NOMBRE
+    const ordenLimpia = datosPersonalizados.orden_trabajo || 'Ficha';
+    const codigoLimpio = datosPersonalizados.codigo || 'Maquina';
+    const nombreSalida = `${ordenLimpia} (${codigoLimpio})`; 
+
     const rutaDocx = path.join(CARPETA_SALIDA, `${nombreSalida}.docx`);
 
     fs.writeFileSync(rutaDocx, nuevoBufferWord);
