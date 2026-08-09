@@ -16,6 +16,7 @@ import {
 
 export default function Home() {
   const [paso, setPaso] = useState<number>(1);
+  const [diagnostico, setDiagnostico] = useState('');
 
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [wordFile, setWordFile] = useState<File | null>(null);
@@ -50,6 +51,12 @@ export default function Home() {
     setTecnico4(data.tecnico4 || '');
     setFecha(data.fecha || '');
     setHoras(data.horas || '');
+
+    // PROTECCIÓN: Solo reemplazamos el diagnóstico si la información viene 
+    // estrictamente del Word (que es el único que envía 'data.diagnostico')
+    if (data.diagnostico !== undefined) {
+      setDiagnostico(data.diagnostico || '');
+    }
   };
 
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -207,6 +214,7 @@ export default function Home() {
     formData.append('tecnico4', tecnico4);
     formData.append('fecha', fecha);
     formData.append('horas', horas);
+    formData.append('diagnostico', diagnostico);
 
     try {
       const response = await fetch('http://localhost:8000/api/generar-ficha', {
@@ -468,7 +476,23 @@ export default function Home() {
                         className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm"
                       />
                     </div>
+
                   </div>
+                </div>
+
+
+                {/* Nueva Sección: Diagnóstico de Falla */}
+                <div className="border-t border-[#148D8D]/15 pt-4 mt-4">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 text-center">
+                    Diagnóstico de Falla
+                  </label>
+                  <textarea
+                    value={diagnostico}
+                    onChange={(e) => setDiagnostico(e.target.value)}
+                    rows={3}
+                    placeholder="El diagnóstico autodetectado aparecerá aquí..."
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm resize-none"
+                  />
                 </div>
 
               </div>

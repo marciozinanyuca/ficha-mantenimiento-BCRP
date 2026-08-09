@@ -131,6 +131,23 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
     let jsonRows = Array.isArray(excelFuente) ? excelFuente : obtenerDataframeExcel(excelFuente);
     const fuenteTextoCompleta = normalizarTexto(`${textoWord} ${nombreArchivo}`);
 
+    // --- 1. NUEVO: ESCANEAR Y EXTRAER DIAGNÓSTICO DEL WORD ---
+    let diagnosticoDetectado = "";
+    // Busca todo lo que esté entre "DIAGNOSTICO DE FALLA" y "OPERACION" (con o sin tilde)
+    const regexDiagnostico = /DIAGNOSTICO\s+DE\s+FALLA\s*([\s\S]*?)(?=OPERACI[OÓ]N)/i;
+    const matchDiagnostico = textoWord.match(regexDiagnostico);
+    
+    if (matchDiagnostico && matchDiagnostico[1]) {
+        // Reemplaza múltiples espacios y saltos de línea por un solo espacio limpio
+        diagnosticoDetectado = matchDiagnostico[1].replace(/\s+/g, ' ').trim();
+    }
+
+    // --- 2. NUEVO: FUNCIÓN AUXILIAR PARA EMPAQUETAR EL DIAGNÓSTICO ---
+    const inyectarDiagnostico = (datosExtraidos) => {
+        datosExtraidos.diagnostico = diagnosticoDetectado;
+        return datosExtraidos;
+    };
+
     const maquinasExcel = [];
     jsonRows.forEach((row, idx) => {
         if (row && row[1] && typeof row[1] === 'string') {
@@ -157,7 +174,8 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
                     encontrado: true,
                     metodo: "Código entre paréntesis",
                     maquinaNombre: match.nombreOriginal,
-                    datos: extraerCamposFila(match.row, match.nombreOriginal, jsonRows)
+                    // --- 3. NUEVO: APLICAMOS LA INYECCIÓN EN LOS DATOS ---
+                    datos: inyectarDiagnostico(extraerCamposFila(match.row, match.nombreOriginal, jsonRows))
                 };
             }
         }
@@ -170,7 +188,8 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
                 encontrado: true,
                 metodo: "Nombre exacto / subcadena",
                 maquinaNombre: item.nombreOriginal,
-                datos: extraerCamposFila(item.row, item.nombreOriginal, jsonRows)
+                // --- 3. NUEVO: APLICAMOS LA INYECCIÓN EN LOS DATOS ---
+                datos: inyectarDiagnostico(extraerCamposFila(item.row, item.nombreOriginal, jsonRows))
             };
         }
     }
@@ -203,7 +222,8 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
             encontrado: true,
             metodo: "Coincidencia de palabras clave",
             maquinaNombre: mejorCandidato.nombreOriginal,
-            datos: extraerCamposFila(mejorCandidato.row, mejorCandidato.nombreOriginal, jsonRows)
+            // --- 3. NUEVO: APLICAMOS LA INYECCIÓN EN LOS DATOS ---
+            datos: inyectarDiagnostico(extraerCamposFila(mejorCandidato.row, mejorCandidato.nombreOriginal, jsonRows))
         };
     }
 
@@ -257,6 +277,45 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
 
         const conservarEtiquetas = (str) => (str || "").replace(/(^|>)[^<]+(<|$)/g, '$1$2');
 
+        // 0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA (Seguro y delimitado)
+        if (datos.codigo && String(datos.codigo).trim() !== "") {
+            const codigoNuevo = String(datos.codigo).trim().toUpperCase();
+            const regexKeywordMaq = /CODIGO(?:<[^>]+>|[\s\t\r\n])*DE(?:<[^>]+>|[\s\t\r\n])*LA(?:<[^>]+>|[\s\t\r\n])*MAQUINA(?:<[^>]+>|[\s\t\r\n])*O(?:<[^>]+>|[\s\t\r\n])*EQUIPO/i;
+
+            const keywordMaqMatch = documentXml.match(regexKeywordMaq);
+            if (keywordMaqMatch) {
+                const partes = documentXml.split(keywordMaqMatch[0]);
+                if (partes.length > 1) {
+                    let subXml = partes[1];
+                    let primerNodoEncontrado = false;
+                    let contadorNodosModificados = 0;
+
+                    // SOLO modificamos dentro de un radio seguro (primeros 400 caracteres de código)
+                    subXml = subXml.replace(/(<w:t[^>]*>)([^<]*?)(<\/w:t>)/gi, (match, openTag, contenido, closeTag, offset) => {
+                        if (offset < 400) {
+                            if (contenido.trim() !== "" && !/^[:\s]*$/.test(contenido)) {
+                                if (!primerNodoEncontrado) {
+                                    primerNodoEncontrado = true;
+                                    contadorNodosModificados++;
+                                    return `${openTag}${codigoNuevo}${closeTag}`; // Inserta el nuevo nombre
+                                } else if (contadorNodosModificados < 3) {
+                                    // Limpia solo si el nombre viejo estaba partido en nodos vecinos cercanos
+                                    contadorNodosModificados++;
+                                    return `${openTag}${closeTag}`;
+                                }
+                            }
+                        }
+                        return match;
+                    });
+
+                    documentXml = partes[0] + keywordMaqMatch[0] + subXml;
+                }
+            }
+        }
+
+
+
+
         // 1. REEMPLAZO DE ORDEN DE TRABAJO (Convertido a Mayúsculas)
         const otNueva = datos.orden_trabajo && String(datos.orden_trabajo).trim() !== ""
             ? String(datos.orden_trabajo).trim().toUpperCase()
@@ -265,23 +324,69 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
             return otNueva + conservarEtiquetas(match);
         });
 
-        // 2. REEMPLAZO DE TÉCNICOS (Convertido a Mayúsculas)
+
+
+
+
+// 2. REEMPLAZO DE TÉCNICOS (Método de Ancla con Expansión Automática de Cuadro)
         const listaTecnicosArr = [datos.tecnico1, datos.tecnico2, datos.tecnico3, datos.tecnico4]
             .filter(t => t && String(t).trim() !== '')
-            .map(t => String(t).trim().toUpperCase()); // <-- Aplica mayúsculas a cada técnico
+            .map(t => String(t).trim().toUpperCase());
 
-        const tecnicosXml = listaTecnicosArr.length > 0 ? listaTecnicosArr.join('</w:t><w:br/><w:t>') : " ";
         const nombresViejos = /DANIEL CELIS|MIGUEL GUERRERO|JORGE LOZANO|RAUL CONSTANTINI|C[EÉ]SAR VELASQUEZ/gi;
-
+        
+        // PASO 1: Limpiamos los nombres viejos y dejamos el Ancla.
         let primerReemplazoHecho = false;
         documentXml = documentXml.replace(nombresViejos, (match) => {
             if (!primerReemplazoHecho) {
                 primerReemplazoHecho = true;
-                return tecnicosXml + conservarEtiquetas(match);
+                return "[[ANCLA_TEC]]" + conservarEtiquetas(match); 
             } else {
-                return conservarEtiquetas(match);
+                return conservarEtiquetas(match); 
             }
         });
+
+        // PASO 2: Operamos desde el Ancla
+        if (documentXml.includes("[[ANCLA_TEC]]")) {
+            const partesAncla = documentXml.split("[[ANCLA_TEC]]");
+            const tec1 = listaTecnicosArr.length > 0 ? listaTecnicosArr[0] : " ";
+            
+            // --- NUEVO PASO ESTRELLA: HACER QUE EL CUADRO SE ESTIRE HACIA ABAJO ---
+            // Buscamos hacia atrás dónde empieza la fila de la tabla (<w:tr)
+            const indexUltimaFila = partesAncla[0].lastIndexOf('<w:tr'); 
+            if (indexUltimaFila !== -1) {
+                let fragmentoFila = partesAncla[0].substring(indexUltimaFila);
+                // Cambiamos la altura de "exacta" a "automática" solo para esta fila
+                fragmentoFila = fragmentoFila.replace(/w:hRule="exact"/gi, 'w:hRule="auto"');
+                partesAncla[0] = partesAncla[0].substring(0, indexUltimaFila) + fragmentoFila;
+            }
+            // ----------------------------------------------------------------------
+
+            // Extraer el formato original (tamaño, tipo de letra)
+            const matchRPr = partesAncla[0].match(/<w:rPr>[\s\S]*?<\/w:rPr>/ig);
+            const rPrText = matchRPr ? matchRPr[matchRPr.length - 1] : "";
+
+            let xmlPosterior = partesAncla[1];
+
+            // Si hay más de un técnico, creamos los ENTERS reales
+            if (listaTecnicosArr.length > 1) {
+                let parrafosExtra = "";
+                for (let i = 1; i < listaTecnicosArr.length; i++) {
+                    parrafosExtra += `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r>${rPrText}<w:t>${listaTecnicosArr[i]}</w:t></w:r></w:p>`;
+                }
+                
+                // Buscamos el final de la línea actual para inyectarlos debajo
+                const indexFinParrafo = xmlPosterior.indexOf('</w:p>');
+                if (indexFinParrafo !== -1) {
+                    const posCorte = indexFinParrafo + '</w:p>'.length;
+                    xmlPosterior = xmlPosterior.substring(0, posCorte) + parrafosExtra + xmlPosterior.substring(posCorte);
+                }
+            }
+
+            // PASO 3: Unimos todo con el primer técnico en su lugar
+            documentXml = partesAncla[0] + tec1 + xmlPosterior;
+        }
+        
 
         // 3. REEMPLAZO DE FECHA DE EJECUCIÓN (Convertido a Mayúsculas)
         const fechaNueva = datos.fecha && String(datos.fecha).trim() !== ""
