@@ -31,7 +31,10 @@ function obtenerDataframeExcel(localPath = EXCEL_LOCAL_PATH) {
 }
 
 /**
- * Extrae datos de la fila de Excel con búsqueda mejorada de Horas y Fecha Término
+ * Extrae datos de la fila de Excel respetando celdas vacías y detectando falta de información
+ */
+/**
+ * Extrae datos de la fila de Excel de forma estricta (sin inventar datos si está vacío)
  */
 function extraerCamposFila(fila, nombreMaquina, jsonRows) {
     let idxObs = -1;
@@ -39,14 +42,14 @@ function extraerCamposFila(fila, nombreMaquina, jsonRows) {
     let idxFechaTermino = -1;
     let idxTecnico1 = -1, idxTecnico2 = -1, idxTecnico3 = -1, idxTecnico4 = -1;
 
-    // 1. Escaneo de Encabezados en las primeras filas
+    // 1. Escaneo de Encabezados
     for (let r = 0; r < Math.min(12, jsonRows.length); r++) {
         const rowHeader = jsonRows[r];
         if (!rowHeader) continue;
 
         rowHeader.forEach((cell, idx) => {
             const cellNorm = normalizarTexto(cell);
-            
+
             if (cellNorm.includes("TECNICO 1")) idxTecnico1 = idx;
             else if (cellNorm.includes("TECNICO 2")) idxTecnico2 = idx;
             else if (cellNorm.includes("TECNICO 3")) idxTecnico3 = idx;
@@ -61,11 +64,10 @@ function extraerCamposFila(fila, nombreMaquina, jsonRows) {
         });
     }
 
-    // Fallbacks
-    if (idxFechaTermino === -1) idxFechaTermino = 17; // Columna R por defecto
+    if (idxFechaTermino === -1) idxFechaTermino = 17;
 
-    // 2. Orden de Trabajo (Busca OSS + Números)
-    let ordenTrabajo = "S/N";
+    // 2. Orden de Trabajo
+    let ordenTrabajo = "";
     for (let cellVal of fila) {
         if (cellVal && typeof cellVal === 'string') {
             const otMatch = cellVal.match(/OSS\d+/i);
@@ -76,38 +78,27 @@ function extraerCamposFila(fila, nombreMaquina, jsonRows) {
         }
     }
 
-    // 3. Extracción Garantizada de Horas Reales
-    let horasVal = (idxHoras !== -1 && fila[idxHoras] !== undefined) ? fila[idxHoras] : null;
-    
-    // Si no se ubicó por encabezado, buscar el valor numérico/decimal de horas en la fila
-    if (horasVal === null || horasVal === undefined || String(horasVal).toUpperCase().includes("OSS")) {
-        for (let cellVal of fila) {
-            if (typeof cellVal === 'number' && cellVal > 0 && cellVal < 1000) {
-                horasVal = cellVal;
-                break;
-            }
+    // 3. Horas Reales (EXTRACCIÓN ESTRICTA)
+    let horasStr = "";
+    if (idxHoras !== -1 && fila[idxHoras] !== undefined && fila[idxHoras] !== null) {
+        let horasLimpio = String(fila[idxHoras]).trim();
+        // Validamos que no sea un texto equivocado
+        if (horasLimpio !== "" && !horasLimpio.toUpperCase().includes("OSS") && !horasLimpio.toUpperCase().includes("REALIZADO")) {
+            horasStr = `${horasLimpio} HORAS`;
         }
     }
 
-    let horasLimpio = (horasVal !== null && horasVal !== undefined) ? String(horasVal).trim() : "0";
-    if (horasLimpio.toUpperCase().includes("OSS") || horasLimpio.toUpperCase().includes("REALIZADO")) {
-        horasLimpio = "0";
-    }
-    const horasStr = `${horasLimpio} HORAS`;
-
-    // 4. Fecha de Ejecución (Basada en Fecha Término - Columna R)
-    let fechaStr = "AGOSTO - 2025";
+    // 4. Fecha de Ejecución
+    let fechaStr = "";
     const fechaVal = fila[idxFechaTermino];
-
     if (fechaVal instanceof Date) {
-        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", 
-                       "JULIO", "AGOSTO", "SETIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SETIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
         fechaStr = `${meses[fechaVal.getMonth()]} - ${fechaVal.getFullYear()}`;
     } else if (typeof fechaVal === 'string' && fechaVal.trim() !== '') {
         fechaStr = fechaVal.trim().toUpperCase();
     }
 
-    // 5. Técnicos
+    // 5. Técnicos (ESTRICTO)
     const limpiarTecnico = (val) => {
         if (!val || typeof val !== 'string') return "";
         const str = val.trim();
@@ -120,31 +111,19 @@ function extraerCamposFila(fila, nombreMaquina, jsonRows) {
     let t3 = idxTecnico3 !== -1 ? limpiarTecnico(fila[idxTecnico3]) : "";
     let t4 = idxTecnico4 !== -1 ? limpiarTecnico(fila[idxTecnico4]) : "";
 
-    if (!t1 && !t2) {
-        const posibles = [];
-        fila.forEach(cell => {
-            if (cell && typeof cell === 'string') {
-                const c = cell.trim();
-                if (c.length > 5 && c.includes(' ') && !c.includes('OSS') && !c.includes('Realizado') && !c.includes('MONTACARGA')) {
-                    posibles.push(c);
-                }
-            }
-        });
-        t1 = posibles[0] || "";
-        t2 = posibles[1] || "";
-        t3 = posibles[2] || "";
-        t4 = posibles[3] || "";
-    }
+    // 6. Validación de Fila Vacía
+    const datosEstanVacios = !ordenTrabajo && !horasStr && !t1;
 
     return {
         codigo: nombreMaquina,
         orden_trabajo: ordenTrabajo,
-        tecnico1: t1 || "MIGUEL GUERRERO",
+        tecnico1: t1,
         tecnico2: t2,
         tecnico3: t3,
         tecnico4: t4,
         fecha: fechaStr,
-        horas: horasStr
+        horas: horasStr,
+        alerta_vacio: datosEstanVacios // Enviamos la bandera al frontend
     };
 }
 
@@ -199,7 +178,7 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
     // CAPA 3: Palabras Clave
     const stopwords = new Set(["DE", "LA", "EL", "LOS", "LAS", "EN", "DEL", "Y", "O", "PARA", "TIPO", "EQUIPO", "MAQUINA", "CODIGO", "OSS"]);
     const tokensWord = normalizarTexto(fuenteTextoCompleta).split(/\s+/).filter(w => w.length >= 3 && !stopwords.has(w));
-    
+
     let mejorCandidato = null;
     let maxPuntaje = 0;
 
@@ -258,42 +237,105 @@ function consultarDatosMaquina(identificadorMaquina, excelFuente = EXCEL_LOCAL_P
     return extraerCamposFila(filaEncontrada, nombreEnc, jsonRows);
 }
 
+
 /**
- * Reemplaza etiquetas tanto en texto inline como dentro de cuadros/celdas
+ * Reemplazo de Zona Aislada: Aniquila números fragmentados (ej. "20" y "24") 
+ * delimitando el área exacta de la fecha para evitar cruces.
  */
 /**
- * Reemplaza etiquetas tanto en texto inline como dentro de cuadros/celdas
+ * Reemplazo Quirúrgico: Si el formulario está vacío, borra la información 
+ * del documento original dejándolo en blanco.
+ */
+/**
+ * Reemplazo Quirúrgico con Mayúsculas Automáticas: Todo texto ingresado 
+ * se convertirá a mayúsculas antes de insertarse en el documento.
  */
 async function actualizarPlantillaWord(docxBuffer, datos) {
-    const listaTecnicosArr = [datos.tecnico1, datos.tecnico2, datos.tecnico3, datos.tecnico4]
-        .filter(t => t && String(t).trim() !== '');
-
-    // Formato con saltos de línea XML (<w:br/>) para cuadros
-    const tecnicosXml = listaTecnicosArr.length > 0
-        ? listaTecnicosArr.join('</w:t><w:br/><w:t>')
-        : 'MIGUEL GUERRERO';
-
     try {
         const zip = new PizZip(docxBuffer);
         let documentXml = zip.file("word/document.xml").asText();
 
-        // 1. REEMPLAZO DE ORDEN DE TRABAJO
-        // SOLUCIÓN: Terminar con "\d" obliga a que se detenga en el último número de la OT.
-        // Así NO se comerá la etiqueta de Word que da el salto de línea hacia "AREA: FIELATURA".
-        documentXml = documentXml.replace(/OSS(?:<[^>]+>|\d)*\d/gi, datos.orden_trabajo);
+        const conservarEtiquetas = (str) => (str || "").replace(/(^|>)[^<]+(<|$)/g, '$1$2');
 
-        // 2. REEMPLAZO DE TÉCNICOS (TU CÓDIGO ORIGINAL SIN CAMBIOS)
-        documentXml = documentXml.replace(/MIGUEL GUERRERO[\s\S]*?JORGE LOZANO/gi, tecnicosXml);
-        documentXml = documentXml.replace(/(TECNICO RESPONSABLE\s*[\t\s]*)([^<\r\n]+)/gi, `$1${listaTecnicosArr.join(' / ')}`);
+        // 1. REEMPLAZO DE ORDEN DE TRABAJO (Convertido a Mayúsculas)
+        const otNueva = datos.orden_trabajo && String(datos.orden_trabajo).trim() !== ""
+            ? String(datos.orden_trabajo).trim().toUpperCase()
+            : " ";
+        documentXml = documentXml.replace(/O(?:<[^>]+>)*S(?:<[^>]+>)*S(?:<[^>]+>|\d)*\d/gi, (match) => {
+            return otNueva + conservarEtiquetas(match);
+        });
 
-        // 3. REEMPLAZO DE FECHA DE EJECUCIÓN
-        // SOLUCIÓN: Igual que arriba, terminamos con "\d" para que se detenga en el año exacto.
-        const mesesRegex = "ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE";
-        const regexFechaXml = new RegExp(`(?:${mesesRegex})(?:<[^>]+>|[\\s\\t\\r\\n\\-\\u00a0]|&#160;)*\\d(?:<[^>]+>|\\d)*\\d`, 'gi');
-        documentXml = documentXml.replace(regexFechaXml, datos.fecha);
+        // 2. REEMPLAZO DE TÉCNICOS (Convertido a Mayúsculas)
+        const listaTecnicosArr = [datos.tecnico1, datos.tecnico2, datos.tecnico3, datos.tecnico4]
+            .filter(t => t && String(t).trim() !== '')
+            .map(t => String(t).trim().toUpperCase()); // <-- Aplica mayúsculas a cada técnico
 
-        // 4. REEMPLAZO DE HORAS REALES (TU CÓDIGO ORIGINAL SIN CAMBIOS)
-        documentXml = documentXml.replace(/(\d+(\.\d+)?)\s*HORAS/gi, datos.horas);
+        const tecnicosXml = listaTecnicosArr.length > 0 ? listaTecnicosArr.join('</w:t><w:br/><w:t>') : " ";
+        const nombresViejos = /DANIEL CELIS|MIGUEL GUERRERO|JORGE LOZANO|RAUL CONSTANTINI|C[EÉ]SAR VELASQUEZ/gi;
+
+        let primerReemplazoHecho = false;
+        documentXml = documentXml.replace(nombresViejos, (match) => {
+            if (!primerReemplazoHecho) {
+                primerReemplazoHecho = true;
+                return tecnicosXml + conservarEtiquetas(match);
+            } else {
+                return conservarEtiquetas(match);
+            }
+        });
+
+        // 3. REEMPLAZO DE FECHA DE EJECUCIÓN (Convertido a Mayúsculas)
+        const fechaNueva = datos.fecha && String(datos.fecha).trim() !== ""
+            ? String(datos.fecha).trim().toUpperCase()
+            : " ";
+        const regexBloque = /(FECHA(?:<[^>]+>|[\s\t\r\n])*DE(?:<[^>]+>|[\s\t\r\n])*EJECUCION[\s\S]*?)(HORAS|<\/w:tr>|<\/w:txbxContent>)/i;
+
+        documentXml = documentXml.replace(regexBloque, (match, bloqueFecha, limiteFinal) => {
+            let fechaInsertada = false;
+
+            const nuevoBloque = bloqueFecha.replace(/(<w:t[^>]*>)([^<]*?)(<\/w:t>)/gi, (m, openTag, texto, closeTag) => {
+                if (texto.trim() === "") return m;
+                const txtUpper = texto.toUpperCase();
+
+                if (/FECHA|EJECUCION/i.test(txtUpper)) return m;
+
+                const tieneMes = /ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE/i.test(txtUpper);
+                const tieneNumeroOGuion = /[0-9\-]/.test(txtUpper);
+
+                if (tieneMes || tieneNumeroOGuion) {
+                    if (!fechaInsertada) {
+                        fechaInsertada = true;
+                        return `${openTag}${fechaNueva}${closeTag}`;
+                    } else {
+                        return `${openTag}${closeTag}`;
+                    }
+                }
+                return m;
+            });
+            return nuevoBloque + limiteFinal;
+        });
+
+        // 4. REEMPLAZO DE HORAS REALES (Por si se escriben letras)
+        let horasNueva = " ";
+        if (datos.horas && String(datos.horas).trim() !== "") {
+            const horasStr = String(datos.horas).trim().toUpperCase();
+            const matchHoras = horasStr.match(/\d+(?:\.\d+)?/);
+            horasNueva = matchHoras ? matchHoras[0] : horasStr;
+        }
+
+        const regexKeyword = /HORAS(?:<[^>]+>|[\s\t\r\n])*(?:REALES(?:<[^>]+>|[\s\t\r\n])*)?UTILIZADA(?:S)?/i;
+        const keywordMatch = documentXml.match(regexKeyword);
+
+        if (keywordMatch) {
+            const partes = documentXml.split(keywordMatch[0]);
+            if (partes.length > 1) {
+                partes[1] = partes[1].replace(/>([\s\t\r\n]*)\d+(?:\.\d+)?/i, `>$1${horasNueva}`);
+                documentXml = partes.join(keywordMatch[0]);
+            }
+        } else {
+            documentXml = documentXml.replace(/(\d+(\.\d+)?)\s*HORAS/gi, (match) => {
+                return horasNueva + " " + conservarEtiquetas(match).replace(/\d+(\.\d+)?\s*/g, '');
+            });
+        }
 
         zip.file("word/document.xml", documentXml);
 
@@ -316,7 +358,7 @@ async function procesarFicha(docxBufferInput, datosPersonalizados) {
     const nuevoBufferWord = await actualizarPlantillaWord(docxBufferInput, datosPersonalizados);
     const nombreSalida = `${datosPersonalizados.orden_trabajo} (${datosPersonalizados.codigo || 'Ficha'})_ACTUALIZADO`;
     const rutaDocx = path.join(CARPETA_SALIDA, `${nombreSalida}.docx`);
-    
+
     fs.writeFileSync(rutaDocx, nuevoBufferWord);
 
     return {
@@ -331,5 +373,61 @@ module.exports = {
     reconociendoMaquinaInteligente,
     consultarDatosMaquina,
     procesarFicha,
-    CARPETA_SALIDA
+    CARPETA_SALIDA,
+    obtenerListaMaquinas
 };
+
+/**
+ * Extrae todos los nombres de las máquinas de la columna "Máquina" en el Excel,
+ * omitiendo de forma inteligente los encabezados y los TÍTULOS de secciones.
+ */
+function obtenerListaMaquinas(jsonRows) {
+    let idxMaquina = -1;
+    let filaInicio = 0;
+    let maquinas = [];
+
+    // 1. Buscar en qué columna y en qué fila está el encabezado "MÁQUINA"
+    for (let r = 0; r < Math.min(12, jsonRows.length); r++) {
+        const rowHeader = jsonRows[r];
+        if (!rowHeader) continue;
+
+        rowHeader.forEach((cell, idx) => {
+            if (typeof cell === 'string' && /M[AÁ]QUINA/i.test(cell)) {
+                idxMaquina = idx;
+                filaInicio = r + 1; // Empezamos a leer desde la fila de abajo
+            }
+        });
+        if (idxMaquina !== -1) break;
+    }
+
+    if (idxMaquina === -1) idxMaquina = 1;
+
+    // 2. Extraer los nombres reales de las máquinas
+    for (let r = filaInicio; r < jsonRows.length; r++) {
+        const celda = jsonRows[r][idxMaquina];
+        if (celda && typeof celda === 'string') {
+            const nombreLimpio = celda.trim();
+            const nombreUpper = nombreLimpio.toUpperCase();
+
+            // Filtros de limpieza
+            const esVacio = nombreLimpio === "";
+            const esEncabezado = nombreUpper === "MÁQUINA" || nombreUpper === "MAQUINA";
+
+            // FILTRO NUEVO: Bloquea los títulos de agrupaciones del Excel
+            const esTituloSeccion = nombreUpper.includes("MANTENIMIENTO") ||
+                nombreUpper.includes("ELABORADO") ||
+                nombreUpper.includes("FECHA") ||
+                nombreUpper.includes("ÁREA") ||
+                nombreUpper.includes("AREA");
+
+
+            // Solo si pasa todas las pruebas de seguridad, se agrega a la lista
+            if (!esVacio && !esEncabezado && !esTituloSeccion) {
+                maquinas.push(nombreLimpio);
+            }
+        }
+    }
+
+    // Retornamos la lista eliminando cualquier máquina duplicada
+    return [...new Set(maquinas)];
+}

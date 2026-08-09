@@ -1,17 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Upload, 
-  CheckCircle, 
-  AlertCircle, 
-  Loader2, 
-  Download, 
-  FileSpreadsheet, 
-  FileText, 
-  Sparkles, 
-  Search, 
-  RefreshCw 
+import {
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Sparkles,
+  Search,
+  RefreshCw
 } from 'lucide-react';
 
 export default function Home() {
@@ -35,6 +35,8 @@ export default function Home() {
   const [loadingDoc, setLoadingDoc] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | ''; text: string }>({ type: '', text: '' });
   const [jsReady, setJsReady] = useState(false);
+  const [listaMaquinas, setListaMaquinas] = useState<string[]>([]);
+
 
   useEffect(() => {
     setJsReady(true);
@@ -69,6 +71,11 @@ export default function Home() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Error al procesar el Excel.');
 
+        // Guardamos la lista de máquinas en el estado que ya tenías creado
+        if (data.maquinas) {
+          setListaMaquinas(data.maquinas);
+        }
+
         setStatusMessage({ type: 'success', text: '¡Matriz Excel procesada con éxito! Procede con el Paso 2.' });
         setPaso(2);
       } catch (error: any) {
@@ -79,6 +86,7 @@ export default function Home() {
     }
   };
 
+  // PASO 2: Subir Word y Auto-detectar
   const handleWordUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -106,15 +114,25 @@ export default function Home() {
         if (data.autodetectado && data.data) {
           setCodigo(data.codigoDetectado || '');
           mapearDatosFormulario(data.data);
-          setStatusMessage({ 
-            type: 'success', 
-            text: `✨ ¡Máquina detectada! Orden de Trabajo (${data.data.orden_trabajo}) y Técnicos autocompletados.` 
-          });
+
+          // LÓGICA DE MENSAJES DINÁMICOS
+          if (data.data.alerta_vacio) {
+            setStatusMessage({
+              type: 'info',
+              text: `⚠️ Máquina detectada en Excel, pero NO tiene datos registrados (OT, Horas, Técnicos). Complétalos manualmente.`
+            });
+          } else {
+            const textoOt = data.data.orden_trabajo ? `Orden de Trabajo (${data.data.orden_trabajo})` : 'datos operativos';
+            setStatusMessage({
+              type: 'success',
+              text: `✨ ¡Máquina detectada! ${textoOt} autocompletados correctamente.`
+            });
+          }
         } else {
           setCodigo(data.codigoDetectado || '');
-          setStatusMessage({ 
-            type: 'info', 
-            text: 'Confirma el nombre de la máquina en el Paso 3 y presiona ENTER.' 
+          setStatusMessage({
+            type: 'info',
+            text: 'Confirma el nombre de la máquina en el Paso 3 y presiona ENTER para buscarla.'
           });
         }
 
@@ -127,31 +145,48 @@ export default function Home() {
     }
   };
 
+  // MOTOR DE BÚSQUEDA CENTRALIZADO
+  const buscarMaquina = async (codigoBuscado: string) => {
+    if (!codigoBuscado.trim()) return;
+
+    setSearching(true);
+    setStatusMessage({ type: '', text: '' });
+
+    try {
+      const response = await fetch('http://localhost:8000/api/consultar-maquina', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: codigoBuscado.trim() }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'No se encontró la máquina.');
+
+      mapearDatosFormulario(data.data);
+
+      if (data.data.alerta_vacio) {
+        setStatusMessage({
+          type: 'info',
+          text: '⚠️ La máquina existe, pero sus columnas están vacías en la matriz Excel.'
+        });
+      } else {
+        setStatusMessage({
+          type: 'success',
+          text: '¡Datos de la máquina encontrados y autocompletados!'
+        });
+      }
+    } catch (error: any) {
+      setStatusMessage({ type: 'error', text: error.message || 'Máquina no encontrada en el Excel.' });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // BÚSQUEDA MANUAL (Al presionar ENTER)
   const handleSearchManual = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (!codigo.trim()) return;
-
-      setSearching(true);
-      setStatusMessage({ type: '', text: '' });
-
-      try {
-        const response = await fetch('http://localhost:8000/api/consultar-maquina', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codigo: codigo.trim() }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.detail || 'No se encontró la máquina.');
-
-        mapearDatosFormulario(data.data);
-        setStatusMessage({ type: 'success', text: '¡Datos de la máquina encontrados y autocompletados!' });
-      } catch (error: any) {
-        setStatusMessage({ type: 'error', text: error.message || 'Máquina no encontrada.' });
-      } finally {
-        setSearching(false);
-      }
+      buscarMaquina(codigo); // Llamamos al motor centralizado
     }
   };
 
@@ -186,7 +221,7 @@ export default function Home() {
 
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
-      
+
       const a = document.createElement('a');
       a.href = downloadUrl;
       a.download = `${ordenTrabajo || 'Ficha'}_ACTUALIZADO.docx`;
@@ -205,10 +240,10 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#D5EAD8] bg-linear-to-tr from-[#C1E1A7]/40 via-[#D5EAD8] to-[#E6F0E3] flex flex-col items-center justify-center p-4 md:p-6 font-sans">
-      
+
       {/* Tarjeta Central Ampliada (max-w-3xl) */}
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-[#148D8D]/20 px-6 py-6 md:px-10 md:py-8 relative transition-all duration-300">
-        
+
         {/* Encabezado */}
         <div className="text-center mb-6 border-b border-[#148D8D]/20 pb-6">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-linear-to-br from-[#B78A62] via-[#E5C29F] to-[#8C6239] mb-3 shadow-md border border-[#E5C29F]/40 shadow-slate-900/10">
@@ -228,11 +263,10 @@ export default function Home() {
           </div>
 
           <div className="mt-3">
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all duration-300 ${
-              jsReady
-                ? 'bg-emerald-600/10 text-emerald-700 border-emerald-600/20'
-                : 'bg-amber-600/10 text-amber-700 border-amber-600/20'
-            }`}>
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all duration-300 ${jsReady
+              ? 'bg-emerald-600/10 text-emerald-700 border-emerald-600/20'
+              : 'bg-amber-600/10 text-amber-700 border-amber-600/20'
+              }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${jsReady ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
               {jsReady ? 'Sistema Operativo' : 'Sincronizando'}
             </span>
@@ -240,7 +274,7 @@ export default function Home() {
         </div>
 
         <div className="space-y-6">
-          
+
           {/* PASO 1: EXCEL */}
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 flex items-center justify-between">
@@ -284,34 +318,69 @@ export default function Home() {
           {/* PASO 3: FORMULARIO ESPACIOSO Y CENTRADO */}
           {paso >= 3 && (
             <form onSubmit={handleSubmitFinal} className="space-y-6 animate-fade-in border-t border-[#148D8D]/15 pt-4">
-              
+
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#148D8D] uppercase tracking-wider">
                 <Sparkles className="w-4 h-4" />
                 <span>PASO 3: Confirmación de Datos Operativos</span>
               </div>
 
+
+
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1">
                   Código o Nombre de Máquina (Presiona ENTER para refrescar)
                 </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Ej. MONTACARGA YALE"
-                    value={codigo}
-                    onChange={(e) => setCodigo(e.target.value)}
-                    onKeyDown={handleSearchManual}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[#0E2C40] font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-[#148D8D] shadow-sm pr-10"
-                  />
-                  <div className="absolute right-3 top-2.5 text-[#148D8D]">
-                    {searching ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+
+                <div className="flex gap-2 relative">
+                  {/* 1. BARRA DE TEXTO (Limpia y sin el buscador fantasma) */}
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Ej. MONTACARGA YALE"
+                      value={codigo}
+                      onChange={(e) => setCodigo(e.target.value)}
+                      onKeyDown={handleSearchManual}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[#0E2C40] font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-[#148D8D] shadow-sm pr-10"
+                    />
+                    <div className="absolute right-3 top-2.5 text-[#148D8D]">
+                      {searching ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                    </div>
+                  </div>
+
+                  {/* 2. BOTÓN DESPLEGABLE (Con texto negro y auto-actualización) */}
+                  <div
+                    className="relative w-12 flex-shrink-0 bg-slate-100 border border-slate-200 hover:bg-[#148D8D]/10 hover:border-[#148D8D]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer group"
+                    title="Ver catálogo completo de máquinas"
+                  >
+                    <select
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-black"
+                      value=""
+                      onChange={(e) => {
+                        const nuevaMaquina = e.target.value;
+                        if (nuevaMaquina) {
+                          setCodigo(nuevaMaquina); // Escribe el nombre en la barra
+                          buscarMaquina(nuevaMaquina); // ¡Dispara la actualización de los cuadros al instante!
+                        }
+                      }}
+                    >
+                      <option value="" disabled className="text-black">Seleccionar otra máquina...</option>
+                      {listaMaquinas.map((maq, index) => (
+                        <option key={index} value={maq} className="text-[#444f56] font-medium">{maq}</option>
+                      ))}
+                    </select>
+
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-500 group-hover:text-[#148D8D]" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
                   </div>
                 </div>
               </div>
 
+
+
               {/* Grid Ampliado con texto centrado en campos clave */}
               <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 space-y-4">
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
@@ -408,11 +477,10 @@ export default function Home() {
               <button
                 type="submit"
                 disabled={!wordFile || loadingDoc}
-                className={`w-full py-4 rounded-xl text-xs font-extrabold tracking-wider uppercase transition-all duration-300 shadow-md flex items-center justify-center gap-2 ${
-                  !wordFile || loadingDoc
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                    : 'bg-[#EFBC75] text-[#0E2C40] hover:bg-[#e0b06b] hover:shadow-lg active:scale-[0.995]'
-                }`}
+                className={`w-full py-4 rounded-xl text-xs font-extrabold tracking-wider uppercase transition-all duration-300 shadow-md flex items-center justify-center gap-2 ${!wordFile || loadingDoc
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                  : 'bg-[#EFBC75] text-[#0E2C40] hover:bg-[#e0b06b] hover:shadow-lg active:scale-[0.995]'
+                  }`}
               >
                 {loadingDoc ? (
                   <>
@@ -431,13 +499,12 @@ export default function Home() {
 
           {/* Mensajes de Feedback */}
           {statusMessage.text && (
-            <div className={`mt-4 text-xs font-bold p-4 rounded-xl border transition-all duration-300 text-center flex items-center justify-center gap-2 ${
-              statusMessage.type === 'success'
-                ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                : statusMessage.type === 'error'
+            <div className={`mt-4 text-xs font-bold p-4 rounded-xl border transition-all duration-300 text-center flex items-center justify-center gap-2 ${statusMessage.type === 'success'
+              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+              : statusMessage.type === 'error'
                 ? 'bg-rose-100 border-rose-300 text-rose-800'
                 : 'bg-[#148D8D]/10 border-[#148D8D]/30 text-[#1A4A5A]'
-            }`}>
+              }`}>
               {statusMessage.type === 'success' ? (
                 <CheckCircle className="w-4 h-4 shrink-0" />
               ) : statusMessage.type === 'error' ? (

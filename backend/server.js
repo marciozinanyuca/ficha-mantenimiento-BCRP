@@ -5,7 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const mammoth = require('mammoth');
-const { reconociendoMaquinaInteligente, consultarDatosMaquina, procesarFicha } = require('./automatizar_fichas');
+const { reconociendoMaquinaInteligente, consultarDatosMaquina, procesarFicha, obtenerListaMaquinas } = require('./automatizar_fichas');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -38,10 +38,14 @@ app.post('/api/cargar-excel', upload.single('excel'), (req, res) => {
         const sheet = workbook.Sheets['PLAN.MANT'];
         excelCacheJson = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 9 });
 
+        // Extraemos la lista de máquinas usando la nueva función
+        const maquinasDisponibles = obtenerListaMaquinas(excelCacheJson);
+
         return res.json({ 
             success: true, 
             message: "Matriz Excel procesada correctamente.",
-            totalFilas: excelCacheJson.length 
+            totalFilas: excelCacheJson.length,
+            maquinas: maquinasDisponibles // Enviamos la lista al frontend
         });
     } catch (error) {
         return res.status(500).json({ detail: `Error procesando Excel: ${error.message}` });
