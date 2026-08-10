@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 
 export default function Home() {
-  const [paso, setPaso] = useState<number>(1);
   const [diagnostico, setDiagnostico] = useState('');
 
   const [excelFile, setExcelFile] = useState<File | null>(null);
@@ -38,7 +37,6 @@ export default function Home() {
   const [jsReady, setJsReady] = useState(false);
   const [listaMaquinas, setListaMaquinas] = useState<string[]>([]);
 
-
   useEffect(() => {
     setJsReady(true);
   }, []);
@@ -52,8 +50,6 @@ export default function Home() {
     setFecha(data.fecha || '');
     setHoras(data.horas || '');
 
-    // PROTECCIÓN: Solo reemplazamos el diagnóstico si la información viene 
-    // estrictamente del Word (que es el único que envía 'data.diagnostico')
     if (data.diagnostico !== undefined) {
       setDiagnostico(data.diagnostico || '');
     }
@@ -78,13 +74,11 @@ export default function Home() {
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || 'Error al procesar el Excel.');
 
-        // Guardamos la lista de máquinas en el estado que ya tenías creado
         if (data.maquinas) {
           setListaMaquinas(data.maquinas);
         }
 
-        setStatusMessage({ type: 'success', text: '¡Matriz Excel procesada con éxito! Procede con el Paso 2.' });
-        setPaso(2);
+        setStatusMessage({ type: 'success', text: '¡Matriz Excel procesada con éxito! Puedes continuar con el Paso 2.' });
       } catch (error: any) {
         setStatusMessage({ type: 'error', text: error.message || 'Error de conexión con el backend.' });
       } finally {
@@ -93,7 +87,6 @@ export default function Home() {
     }
   };
 
-  // PASO 2: Subir Word y Auto-detectar
   const handleWordUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -122,11 +115,10 @@ export default function Home() {
           setCodigo(data.codigoDetectado || '');
           mapearDatosFormulario(data.data);
 
-          // LÓGICA DE MENSAJES DINÁMICOS
           if (data.data.alerta_vacio) {
             setStatusMessage({
               type: 'info',
-              text: `⚠️ Máquina detectada en Excel, pero NO tiene datos registrados (OT, Horas, Técnicos). Complétalos manualmente.`
+              text: `⚠️ Máquina detectada en Excel, pero NO tiene datos registrados. Complétalos manualmente.`
             });
           } else {
             const textoOt = data.data.orden_trabajo ? `Orden de Trabajo (${data.data.orden_trabajo})` : 'datos operativos';
@@ -142,8 +134,6 @@ export default function Home() {
             text: 'Confirma el nombre de la máquina en el Paso 3 y presiona ENTER para buscarla.'
           });
         }
-
-        setPaso(3);
       } catch (error: any) {
         setStatusMessage({ type: 'error', text: error.message });
       } finally {
@@ -152,7 +142,6 @@ export default function Home() {
     }
   };
 
-  // MOTOR DE BÚSQUEDA CENTRALIZADO
   const buscarMaquina = async (codigoBuscado: string) => {
     if (!codigoBuscado.trim()) return;
 
@@ -189,11 +178,10 @@ export default function Home() {
     }
   };
 
-  // BÚSQUEDA MANUAL (Al presionar ENTER)
   const handleSearchManual = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      buscarMaquina(codigo); // Llamamos al motor centralizado
+      buscarMaquina(codigo);
     }
   };
 
@@ -249,11 +237,11 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#D5EAD8] bg-linear-to-tr from-[#C1E1A7]/40 via-[#D5EAD8] to-[#E6F0E3] flex flex-col items-center justify-center p-4 md:p-6 font-sans">
 
-      {/* Tarjeta Central Ampliada (max-w-3xl) */}
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-[#148D8D]/20 px-6 py-6 md:px-10 md:py-8 relative transition-all duration-300">
+      {/* Tarjeta Central (max-w-6xl) */}
+      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-[#148D8D]/20 px-6 py-6 md:px-10 md:py-8 relative transition-all duration-300">
 
-        {/* Encabezado */}
-        <div className="text-center mb-6 border-b border-[#148D8D]/20 pb-6">
+        {/* Encabezado Principal */}
+        <div className="text-center mb-8 border-b border-[#148D8D]/20 pb-6">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-linear-to-br from-[#B78A62] via-[#E5C29F] to-[#8C6239] mb-3 shadow-md border border-[#E5C29F]/40 shadow-slate-900/10">
             <span className="text-[#3A2512] font-serif font-extrabold text-base tracking-wider drop-shadow-sm">
               BCRP
@@ -281,66 +269,72 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* SISTEMA DE CUADRÍCULA (GRID): 2 Columnas en PC, 1 en Móviles */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* =========================================
+              COLUMNA IZQUIERDA: Carga de Archivos (Paso 1 y 2)
+              ========================================= */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            {/* PASO 1: EXCEL */}
+            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
+              <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-3 flex items-center justify-between">
+                <span>PASO 1: Plan Anual (.xlsx)</span>
+                {uploadingExcel && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#148D8D]" />}
+              </label>
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={handleExcelUpload}
+                className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#1A4A5A] file:text-white hover:file:bg-[#0E2C40] file:cursor-pointer bg-white border border-slate-200 rounded-xl p-1.5 transition-all hover:border-slate-300 shadow-sm"
+              />
+              {excelFile && (
+                <p className="text-[11px] text-[#148D8D] font-bold mt-3 flex items-center gap-1.5 bg-[#148D8D]/5 p-2 rounded-lg">
+                  <FileSpreadsheet className="w-4 h-4 shrink-0" /> <span className="truncate">{excelFile.name}</span>
+                </p>
+              )}
+            </div>
 
-          {/* PASO 1: EXCEL */}
-          <div>
-            <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 flex items-center justify-between">
-              <span>PASO 1: Subir Matriz del Plan Anual (Excel .xlsx)</span>
-              {uploadingExcel && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#148D8D]" />}
-            </label>
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={handleExcelUpload}
-              className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#1A4A5A] file:text-white hover:file:bg-[#0E2C40] file:cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-1.5 transition-all hover:border-slate-300 shadow-sm"
-            />
-            {excelFile && (
-              <p className="text-xs text-[#148D8D] font-semibold mt-2 flex items-center gap-1">
-                <FileSpreadsheet className="w-4 h-4" /> Matriz activa: {excelFile.name}
-              </p>
-            )}
-          </div>
-
-          {/* PASO 2: WORD */}
-          {paso >= 2 && (
-            <div className="animate-fade-in border-t border-[#148D8D]/15 pt-4">
-              <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 flex items-center justify-between">
-                <span>PASO 2: Subir Plantilla Word (.docx) del Año Anterior</span>
+            {/* PASO 2: WORD */}
+            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
+              <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-3 flex items-center justify-between">
+                <span>PASO 2: Plantilla Anterior (.docx)</span>
                 {processingWord && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#148D8D]" />}
               </label>
               <input
                 type="file"
                 accept=".docx"
                 onChange={handleWordUpload}
-                className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#1A4A5A] file:text-white hover:file:bg-[#0E2C40] file:cursor-pointer bg-slate-50 border border-slate-200 rounded-xl p-1.5 transition-all hover:border-slate-300 shadow-sm"
+                className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#1A4A5A] file:text-white hover:file:bg-[#0E2C40] file:cursor-pointer bg-white border border-slate-200 rounded-xl p-1.5 transition-all hover:border-slate-300 shadow-sm"
               />
               {wordFile && (
-                <p className="text-xs text-[#148D8D] font-semibold mt-2 flex items-center gap-1">
-                  <FileText className="w-4 h-4" /> Plantilla cargada: {wordFile.name}
+                <p className="text-[11px] text-[#148D8D] font-bold mt-3 flex items-center gap-1.5 bg-[#148D8D]/5 p-2 rounded-lg">
+                  <FileText className="w-4 h-4 shrink-0" /> <span className="truncate">{wordFile.name}</span>
                 </p>
               )}
             </div>
-          )}
 
-          {/* PASO 3: FORMULARIO ESPACIOSO Y CENTRADO */}
-          {paso >= 3 && (
-            <form onSubmit={handleSubmitFinal} className="space-y-6 animate-fade-in border-t border-[#148D8D]/15 pt-4">
+          </div>
 
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#148D8D] uppercase tracking-wider">
+          {/* =========================================
+              COLUMNA DERECHA: Formulario (Paso 3)
+              ========================================= */}
+          <div className="lg:col-span-7">
+            <form onSubmit={handleSubmitFinal} className="animate-fade-in h-full flex flex-col justify-between">
+              
+              {/* Título de la Columna */}
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#148D8D] uppercase tracking-wider mb-5">
                 <Sparkles className="w-4 h-4" />
                 <span>PASO 3: Confirmación de Datos Operativos</span>
               </div>
 
-
-
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1">
-                  Código o Nombre de Máquina (Presiona ENTER para refrescar)
+              {/* Barra de Búsqueda de Máquina */}
+              <div className="mb-5">
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1.5">
+                  Código o Nombre de Máquina (Presiona ENTER)
                 </label>
-
                 <div className="flex gap-2 relative">
-                  {/* 1. BARRA DE TEXTO (Limpia y sin el buscador fantasma) */}
                   <div className="relative flex-1">
                     <input
                       type="text"
@@ -355,19 +349,15 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 2. BOTÓN DESPLEGABLE (Con texto negro y auto-actualización) */}
-                  <div
-                    className="relative w-12 flex-shrink-0 bg-slate-100 border border-slate-200 hover:bg-[#148D8D]/10 hover:border-[#148D8D]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer group"
-                    title="Ver catálogo completo de máquinas"
-                  >
+                  <div className="relative w-12 flex-shrink-0 bg-slate-100 border border-slate-200 hover:bg-[#148D8D]/10 hover:border-[#148D8D]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer group" title="Catálogo de máquinas">
                     <select
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-black"
                       value=""
                       onChange={(e) => {
                         const nuevaMaquina = e.target.value;
                         if (nuevaMaquina) {
-                          setCodigo(nuevaMaquina); // Escribe el nombre en la barra
-                          buscarMaquina(nuevaMaquina); // ¡Dispara la actualización de los cuadros al instante!
+                          setCodigo(nuevaMaquina);
+                          buscarMaquina(nuevaMaquina);
                         }
                       }}
                     >
@@ -376,7 +366,6 @@ export default function Home() {
                         <option key={index} value={maq} className="text-[#444f56] font-medium">{maq}</option>
                       ))}
                     </select>
-
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-500 group-hover:text-[#148D8D]" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
@@ -384,105 +373,58 @@ export default function Home() {
                 </div>
               </div>
 
-
-
-              {/* Grid Ampliado con texto centrado en campos clave */}
-              <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 space-y-4">
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Contenedor Verde del Formulario */}
+              <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 mb-6">
+                
+                {/* Fila 1: OT, Fecha, Horas */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
-                      Orden de Trabajo (OT)
+                      Orden (OT)
                     </label>
-                    <input
-                      type="text"
-                      value={ordenTrabajo}
-                      onChange={(e) => setOrdenTrabajo(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-extrabold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm"
-                    />
+                    <input type="text" value={ordenTrabajo} onChange={(e) => setOrdenTrabajo(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-extrabold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm" />
                   </div>
-
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
-                      Fecha Ejecución
+                      Fecha
                     </label>
-                    <input
-                      type="text"
-                      value={fecha}
-                      onChange={(e) => setFecha(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-semibold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm"
-                    />
+                    <input type="text" value={fecha} onChange={(e) => setFecha(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-semibold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm" />
                   </div>
-
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
                       Horas Reales
                     </label>
-                    <input
-                      type="text"
-                      value={horas}
-                      onChange={(e) => setHoras(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-semibold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm"
-                    />
+                    <input type="text" value={horas} onChange={(e) => setHoras(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-semibold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm" />
                   </div>
                 </div>
 
-                {/* Sección de los 4 Técnicos */}
-                <div className="border-t border-[#148D8D]/15 pt-4">
+                {/* Fila 2: Técnicos */}
+                <div className="border-t border-[#148D8D]/15 pt-4 mb-4">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#148D8D] mb-3 text-center">
-                    Técnicos Responsables Asignados
+                    Técnicos Responsables
                   </label>
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Técnico 1</label>
-                      <input
-                        type="text"
-                        value={tecnico1}
-                        onChange={(e) => setTecnico1(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm"
-                      />
+                      <input type="text" value={tecnico1} onChange={(e) => setTecnico1(e.target.value)} className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D]" />
                     </div>
-
                     <div>
                       <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Técnico 2</label>
-                      <input
-                        type="text"
-                        value={tecnico2}
-                        placeholder="Opcional"
-                        onChange={(e) => setTecnico2(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm"
-                      />
+                      <input type="text" value={tecnico2} placeholder="Opcional" onChange={(e) => setTecnico2(e.target.value)} className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D]" />
                     </div>
-
                     <div>
                       <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Técnico 3</label>
-                      <input
-                        type="text"
-                        value={tecnico3}
-                        placeholder="Opcional"
-                        onChange={(e) => setTecnico3(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm"
-                      />
+                      <input type="text" value={tecnico3} placeholder="Opcional" onChange={(e) => setTecnico3(e.target.value)} className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D]" />
                     </div>
-
                     <div>
                       <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Técnico 4</label>
-                      <input
-                        type="text"
-                        value={tecnico4}
-                        placeholder="Opcional"
-                        onChange={(e) => setTecnico4(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm"
-                      />
+                      <input type="text" value={tecnico4} placeholder="Opcional" onChange={(e) => setTecnico4(e.target.value)} className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D]" />
                     </div>
-
                   </div>
                 </div>
 
-
-                {/* Nueva Sección: Diagnóstico de Falla */}
-                <div className="border-t border-[#148D8D]/15 pt-4 mt-4">
+                {/* Fila 3: Diagnóstico */}
+                <div className="border-t border-[#148D8D]/15 pt-4">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 text-center">
                     Diagnóstico de Falla
                   </label>
@@ -491,17 +433,16 @@ export default function Home() {
                     onChange={(e) => setDiagnostico(e.target.value)}
                     rows={3}
                     placeholder="El diagnóstico autodetectado aparecerá aquí..."
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] shadow-sm resize-none"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] resize-none"
                   />
                 </div>
-
               </div>
 
-              {/* Botón Principal */}
+              {/* Botón Principal (Abajo) */}
               <button
                 type="submit"
                 disabled={!wordFile || loadingDoc}
-                className={`w-full py-4 rounded-xl text-xs font-extrabold tracking-wider uppercase transition-all duration-300 shadow-md flex items-center justify-center gap-2 ${!wordFile || loadingDoc
+                className={`w-full mt-auto py-4 rounded-xl text-xs font-extrabold tracking-wider uppercase transition-all duration-300 shadow-md flex items-center justify-center gap-2 ${!wordFile || loadingDoc
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                   : 'bg-[#EFBC75] text-[#0E2C40] hover:bg-[#e0b06b] hover:shadow-lg active:scale-[0.995]'
                   }`}
@@ -519,28 +460,29 @@ export default function Home() {
                 )}
               </button>
             </form>
-          )}
-
-          {/* Mensajes de Feedback */}
-          {statusMessage.text && (
-            <div className={`mt-4 text-xs font-bold p-4 rounded-xl border transition-all duration-300 text-center flex items-center justify-center gap-2 ${statusMessage.type === 'success'
-              ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
-              : statusMessage.type === 'error'
-                ? 'bg-rose-100 border-rose-300 text-rose-800'
-                : 'bg-[#148D8D]/10 border-[#148D8D]/30 text-[#1A4A5A]'
-              }`}>
-              {statusMessage.type === 'success' ? (
-                <CheckCircle className="w-4 h-4 shrink-0" />
-              ) : statusMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 shrink-0" />
-              ) : (
-                <Sparkles className="w-4 h-4 shrink-0" />
-              )}
-              <span>{statusMessage.text}</span>
-            </div>
-          )}
-
+          </div>
         </div>
+
+        {/* =========================================
+            ZONA DE MENSAJES (Debajo del Grid)
+            ========================================= */}
+        {statusMessage.text && (
+          <div className={`mt-6 text-xs font-bold p-4 rounded-xl border transition-all duration-300 text-center flex items-center justify-center gap-2 ${statusMessage.type === 'success'
+            ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+            : statusMessage.type === 'error'
+              ? 'bg-rose-100 border-rose-300 text-rose-800'
+              : 'bg-[#148D8D]/10 border-[#148D8D]/30 text-[#1A4A5A]'
+            }`}>
+            {statusMessage.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 shrink-0" />
+            ) : statusMessage.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 shrink-0" />
+            ) : (
+              <Sparkles className="w-4 h-4 shrink-0" />
+            )}
+            <span>{statusMessage.text}</span>
+          </div>
+        )}
 
       </div>
     </main>
