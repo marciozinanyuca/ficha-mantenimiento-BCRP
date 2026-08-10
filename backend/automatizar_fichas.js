@@ -528,24 +528,17 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
 }
 
 async function procesarFicha(docxBufferInput, datosPersonalizados) {
-    if (!fs.existsSync(CARPETA_SALIDA)) {
-        fs.mkdirSync(CARPETA_SALIDA, { recursive: true });
-    }
-
+    // 1. Actualizamos la plantilla Word directamente en memoria
     const nuevoBufferWord = await actualizarPlantillaWord(docxBufferInput, datosPersonalizados);
     
-    // AQUÍ ACTUALIZAMOS EL FORMATO DEL NOMBRE
+    // 2. Preparamos el nombre que tendrá el archivo al descargarse
     const ordenLimpia = datosPersonalizados.orden_trabajo || 'Ficha';
     const codigoLimpio = datosPersonalizados.codigo || 'Maquina';
     const nombreSalida = `${ordenLimpia} (${codigoLimpio})`; 
 
-    const rutaDocx = path.join(CARPETA_SALIDA, `${nombreSalida}.docx`);
-
-    fs.writeFileSync(rutaDocx, nuevoBufferWord);
-
+    // 3. Retornamos el buffer listo para enviarse al navegador sin guardarlo en el disco
     return {
         nombreSalida,
-        rutaDocx,
         bufferWord: nuevoBufferWord,
         datos: datosPersonalizados
     };
