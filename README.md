@@ -40,7 +40,7 @@ El repositorio está organizado en dos módulos principales:
 
 Prerrequisitos
 ### 1. Tener instalado Node.js (versión 18 o superior recomendada).
-### Un editor de código (se recomienda VS Code).
+### 2. Un editor de código (se recomienda VS Code).
 
 1. Configurar y arrancar el Backend
 Abre una terminal y navega a la carpeta del backend:
