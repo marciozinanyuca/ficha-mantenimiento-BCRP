@@ -84,17 +84,17 @@ Inicia el entorno de desarrollo:
 npm run dev
 ```
 
-# ☁️ Ejecución en GitHub Codespaces (Opcional)
+## ☁️ Ejecución en GitHub Codespaces (Opcional)
 
 Si estás ejecutando este proyecto en un GitHub Codespaces, sigue estos pasos para garantizar que el frontend se comunique correctamente con el backend sin bloqueos de red:
 
-## 1. Configurar los Puertos como Públicos
+### 1. Configurar los Puertos como Públicos
 
 Ve a la pestaña Puertos en la parte inferior de tu panel de VS Code (junto a la terminal).
 Verás los puertos 3000 (Frontend) y 8000 (Backend).
 Haz clic derecho en cada uno de ellos y cambia su visibilidad de Privado a Público.
 
-## 2. Arrancar el Backend
+### 2. Arrancar el Backend
 
 Abre una terminal, navega a la carpeta del backend, instala dependencias e inicia el servidor:
 
@@ -106,7 +106,7 @@ node server.js
 
 El servidor correrá en el puerto 8000.
 
-## 3. Configurar y Arrancar el Frontend
+### 3. Configurar y Arrancar el Frontend
 
 Abre otra pestaña en la terminal y navega a la carpeta del frontend:
 
