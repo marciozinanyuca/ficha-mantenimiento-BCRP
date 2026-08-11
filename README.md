@@ -1,8 +1,5 @@
 # 📋 Sistema de Automatización de Fichas de Mantenimiento
 
-**Banco Central de Reserva del Perú (BCRP)**  
-*Gerencia de Gestión del Circulante — Casa Nacional de Moneda (CNM)*
-
 ---
 
 ## 📖 Descripción
