@@ -1,6 +1,4 @@
 # 📋 Sistema de Automatización de Fichas de Mantenimiento
-
-## 📖 Descripción
 Aplicación Full-Stack diseñada para optimizar, automatizar y cruzar información entre las matrices anuales de mantenimiento (Excel) y las plantillas oficiales de fichas técnicas (`.docx`).
 
 ## 🛠️ Tecnologías Utilizadas
