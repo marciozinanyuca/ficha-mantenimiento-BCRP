@@ -199,7 +199,7 @@ Una vez desplegado el backend, actualiza la variable `NEXT_PUBLIC_API_URL` del f
 ```text
 ┌─────────────────────────┐
 │     Matriz Excel        │
-│        (.xlsx)           │
+│        (.xlsx)          │
 └────────────┬────────────┘
              │
              ▼
@@ -217,7 +217,7 @@ Una vez desplegado el backend, actualiza la variable `NEXT_PUBLIC_API_URL` del f
              │
              │       ┌─────────────────────────┐
              │       │    Plantilla Word       │
-             │       │        (.docx)           │
+             │       │        (.docx)          │
              │       └────────────┬────────────┘
              │                    │
              │                    ▼
