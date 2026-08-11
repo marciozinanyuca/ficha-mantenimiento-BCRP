@@ -303,9 +303,3 @@ npm run dev
 - 💾 Procesamiento de archivos directamente en memoria RAM.
 - 🌐 Arquitectura separada de frontend y backend.
 - ☁️ Preparado para despliegue en plataformas cloud.
-
----
-
-## 📄 Licencia
-
-Este proyecto es de uso interno y está sujeto a las políticas y condiciones definidas por la organización responsable.
