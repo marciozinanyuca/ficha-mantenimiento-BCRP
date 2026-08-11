@@ -84,6 +84,52 @@ Inicia el entorno de desarrollo:
 npm run dev
 ```
 
+# ☁️ Ejecución en GitHub Codespaces (Opcional)
+
+Si estás ejecutando este proyecto en un GitHub Codespaces, sigue estos pasos para garantizar que el frontend se comunique correctamente con el backend sin bloqueos de red:
+
+## 1. Configurar los Puertos como Públicos
+
+Ve a la pestaña Puertos en la parte inferior de tu panel de VS Code (junto a la terminal).
+Verás los puertos 3000 (Frontend) y 8000 (Backend).
+Haz clic derecho en cada uno de ellos y cambia su visibilidad de Privado a Público.
+
+## 2. Arrancar el Backend
+
+Abre una terminal, navega a la carpeta del backend, instala dependencias e inicia el servidor:
+
+```bash
+cd backend
+npm install
+node server.js
+```
+
+El servidor correrá en el puerto 8000.
+
+## 3. Configurar y Arrancar el Frontend
+
+Abre otra pestaña en la terminal y navega a la carpeta del frontend:
+
+```bash
+cd frontend
+npm install
+```
+
+Crea un archivo .env.local en la raíz de la carpeta frontend apuntando a la URL pública de tu backend en Codespaces (o directamente a http://localhost:8000 si estás en local tradicional):
+
+```env
+NEXT_PUBLIC_API_URL=https://<tu-codigo-codespace>-8000.app.github.dev
+```
+
+Para evitar problemas de congelamiento por WebSockets (HMR) típicos de Next.js en contenedores en la nube, se recomienda compilar y ejecutar en Modo Producción:
+
+```bash
+npm run build
+npx next start -H 0.0.0.0
+```
+
+El frontend correrá en el puerto 3000 y estará accesible mediante su URL pública correspondiente.
+
 ---
 
 ## ⚙️ Flujo de Funcionamiento
