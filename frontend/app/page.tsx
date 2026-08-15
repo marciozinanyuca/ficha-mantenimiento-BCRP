@@ -36,39 +36,24 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | ''; text: string }>({ type: '', text: '' });
   const [jsReady, setJsReady] = useState(false);
   const [listaMaquinas, setListaMaquinas] = useState<string[]>([]);
-  
-  // Opción dinámica: Intenta primero el puerto 8000 local, y como segunda opción toma el archivo .env.local
+
+  // Opción limpia y directa: Si existe el .env.local lo usa, de lo contrario usa localhost:8000
   const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8000');
 
   useEffect(() => {
     setJsReady(true);
-    
-    // Función para detectar inteligentemente qué backend está disponible (Opción 1: 8000 -> Opción 2: .env.local)
-    const determinarBackend = async () => {
-      const urlEnvLocal = process.env.NEXT_PUBLIC_API_URL;
-      
-      // Si hay un archivo .env.local configurado, probamos primero si el puerto 8000 responde
-      if (urlEnvLocal) {
-        try {
-          const response = await fetch('http://localhost:8000/', { 
-            method: 'GET',
-            signal: AbortSignal.timeout(1200) // Espera máxima de 1.2 segundos
-          });
-          if (response.ok) {
-            setBackendUrl('http://localhost:8000');
-            return;
-          }
-        } catch {
-          // Si el puerto 8000 falla o no responde, pasa a usar la segunda opción (.env.local)
-          setBackendUrl(urlEnvLocal);
-        }
-      } else {
-        // Por defecto se queda con el puerto 8000 si no existe .env.local
-        setBackendUrl('http://localhost:8000');
-      }
-    };
 
-    determinarBackend();
+    // Prioridad 1: Variable de entorno de .env.local (Codespaces / Producción)
+    // Prioridad 2: Respaldo a localhost:8000 (PC Local)
+    let urlEnvLocal = process.env.NEXT_PUBLIC_API_URL;
+
+    if (urlEnvLocal && urlEnvLocal.trim() !== '') {
+      // Limpiamos la URL: si tiene un "/" al final, se lo quitamos para evitar el error "//"
+      urlEnvLocal = urlEnvLocal.trim().replace(/\/$/, '');
+      setBackendUrl(urlEnvLocal);
+    } else {
+      setBackendUrl('http://localhost:8000');
+    }
   }, []);
 
   const mapearDatosFormulario = (data: any) => {
@@ -301,12 +286,12 @@ export default function Home() {
 
         {/* SISTEMA DE CUADRÍCULA (GRID): 2 Columnas en PC, 1 en Móviles */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
+
           {/* =========================================
               COLUMNA IZQUIERDA: Carga de Archivos (Paso 1 y 2)
               ========================================= */}
           <div className="lg:col-span-5 space-y-6">
-            
+
             {/* PASO 1: EXCEL */}
             <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
               <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-3 flex items-center justify-between">
@@ -352,7 +337,7 @@ export default function Home() {
               ========================================= */}
           <div className="lg:col-span-7">
             <form onSubmit={handleSubmitFinal} className="animate-fade-in h-full flex flex-col justify-between">
-              
+
               {/* Título de la Columna */}
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#148D8D] uppercase tracking-wider mb-5">
                 <Sparkles className="w-4 h-4" />
@@ -405,7 +390,7 @@ export default function Home() {
 
               {/* Contenedor Verde del Formulario */}
               <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 mb-6">
-                
+
                 {/* Fila 1: OT, Fecha, Horas */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
