@@ -36,9 +36,39 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | ''; text: string }>({ type: '', text: '' });
   const [jsReady, setJsReady] = useState(false);
   const [listaMaquinas, setListaMaquinas] = useState<string[]>([]);
+  
+  // Opción dinámica: Intenta primero el puerto 8000 local, y como segunda opción toma el archivo .env.local
+  const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8000');
 
   useEffect(() => {
     setJsReady(true);
+    
+    // Función para detectar inteligentemente qué backend está disponible (Opción 1: 8000 -> Opción 2: .env.local)
+    const determinarBackend = async () => {
+      const urlEnvLocal = process.env.NEXT_PUBLIC_API_URL;
+      
+      // Si hay un archivo .env.local configurado, probamos primero si el puerto 8000 responde
+      if (urlEnvLocal) {
+        try {
+          const response = await fetch('http://localhost:8000/', { 
+            method: 'GET',
+            signal: AbortSignal.timeout(1200) // Espera máxima de 1.2 segundos
+          });
+          if (response.ok) {
+            setBackendUrl('http://localhost:8000');
+            return;
+          }
+        } catch {
+          // Si el puerto 8000 falla o no responde, pasa a usar la segunda opción (.env.local)
+          setBackendUrl(urlEnvLocal);
+        }
+      } else {
+        // Por defecto se queda con el puerto 8000 si no existe .env.local
+        setBackendUrl('http://localhost:8000');
+      }
+    };
+
+    determinarBackend();
   }, []);
 
   const mapearDatosFormulario = (data: any) => {
@@ -66,7 +96,7 @@ export default function Home() {
       formData.append('excel', file);
 
       try {
-        const response = await fetch('http://localhost:8000/api/cargar-excel', {
+        const response = await fetch(`${backendUrl}/api/cargar-excel`, {
           method: 'POST',
           body: formData,
         });
@@ -103,7 +133,7 @@ export default function Home() {
       formData.append('word', file);
 
       try {
-        const response = await fetch('http://localhost:8000/api/procesar-word-auto', {
+        const response = await fetch(`${backendUrl}/api/procesar-word-auto`, {
           method: 'POST',
           body: formData,
         });
@@ -149,7 +179,7 @@ export default function Home() {
     setStatusMessage({ type: '', text: '' });
 
     try {
-      const response = await fetch('http://localhost:8000/api/consultar-maquina', {
+      const response = await fetch(`${backendUrl}/api/consultar-maquina`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ codigo: codigoBuscado.trim() }),
@@ -205,7 +235,7 @@ export default function Home() {
     formData.append('diagnostico', diagnostico);
 
     try {
-      const response = await fetch('http://localhost:8000/api/generar-ficha', {
+      const response = await fetch(`${backendUrl}/api/generar-ficha`, {
         method: 'POST',
         body: formData,
       });
