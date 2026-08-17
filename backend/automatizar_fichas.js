@@ -275,6 +275,24 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
         const zip = new PizZip(docxBuffer);
         let documentXml = zip.file("word/document.xml").asText();
 
+        // --- NUEVO: 0.1 REEMPLAZO DE CHECKBOXES (INTERNO / EXTERNO) ---
+        if (datos.tipo_mantenimiento === 'INTERNO') {
+            documentXml = documentXml.replace(/TIPO I-INTERNO/g, "TIPO I-INTERNO   [ X ]");
+            documentXml = documentXml.replace(/TIPO II-EXTERNO/g, "TIPO II-EXTERNO   [   ]");
+        } else if (datos.tipo_mantenimiento === 'EXTERNO') {
+            documentXml = documentXml.replace(/TIPO I-INTERNO/g, "TIPO I-INTERNO   [   ]");
+            documentXml = documentXml.replace(/TIPO II-EXTERNO/g, "TIPO II-EXTERNO   [ X ]");
+        }
+
+        // --- NUEVO: 0.2 REEMPLAZO DE LA NOTA INFERIOR ---
+        if (datos.nota !== undefined && datos.nota !== null) {
+            // Buscamos el párrafo XML completo (<w:p>) que contiene la palabra "Nota:"
+            const regexNota = /<w:p[^>]*>(?:(?!<\/w:p>).)*?Nota:(?:(?!<\/w:p>).)*?<\/w:p>/ig;
+            // Creamos el nuevo párrafo manteniendo "Nota:" en negrita
+            const nuevoParrafo = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Nota: </w:t></w:r><w:r><w:t xml:space="preserve">${datos.nota}</w:t></w:r></w:p>`;
+            documentXml = documentXml.replace(regexNota, nuevoParrafo);
+        }
+
         const conservarEtiquetas = (str) => (str || "").replace(/(^|>)[^<]+(<|$)/g, '$1$2');
 
         // 0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA (Seguro y delimitado)

@@ -16,6 +16,10 @@ import {
 
 export default function Home() {
   const [diagnostico, setDiagnostico] = useState('');
+  
+  // --- NUEVOS ESTADOS PARA TIPO DE MANTENIMIENTO Y NOTA ---
+  const [tipoMantenimiento, setTipoMantenimiento] = useState<'INTERNO' | 'EXTERNO' | ''>('');
+  const [nota, setNota] = useState('');
 
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [wordFile, setWordFile] = useState<File | null>(null);
@@ -56,7 +60,7 @@ export default function Home() {
     }
   }, []);
 
-  const mapearDatosFormulario = (data: any) => {
+const mapearDatosFormulario = (data: any) => {
     setOrdenTrabajo(data.orden_trabajo || '');
     setTecnico1(data.tecnico1 || '');
     setTecnico2(data.tecnico2 || '');
@@ -67,6 +71,16 @@ export default function Home() {
 
     if (data.diagnostico !== undefined) {
       setDiagnostico(data.diagnostico || '');
+    }
+    
+    // Mapeo de la nota extraída
+    if (data.nota !== undefined) {
+      setNota(data.nota || '');
+    }
+
+    // --- NUEVO: MAPEO DEL TIPO DE MANTENIMIENTO ---
+    if (data.tipo_mantenimiento) {
+      setTipoMantenimiento(data.tipo_mantenimiento as 'INTERNO' | 'EXTERNO');
     }
   };
 
@@ -218,6 +232,9 @@ export default function Home() {
     formData.append('fecha', fecha);
     formData.append('horas', horas);
     formData.append('diagnostico', diagnostico);
+    // --- NUEVO: ENVÍO DE TIPO Y NOTA ---
+    formData.append('tipo_mantenimiento', tipoMantenimiento);
+    formData.append('nota', nota);
 
     try {
       const response = await fetch(`${backendUrl}/api/generar-ficha`, {
@@ -391,6 +408,23 @@ export default function Home() {
               {/* Contenedor Verde del Formulario */}
               <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 mb-6">
 
+                {/* --- NUEVA SECCIÓN: TIPO DE MANTENIMIENTO --- */}
+                <div className="flex flex-col items-center justify-center mb-4 border-b border-[#148D8D]/15 pb-4">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2">
+                    Clasificación del Mantenimiento
+                  </label>
+                  <div className="flex gap-6 p-2.5 bg-white border border-slate-200 rounded-lg shadow-sm w-full md:w-auto justify-center">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="tipoMantenimiento" checked={tipoMantenimiento === 'INTERNO'} onChange={() => setTipoMantenimiento('INTERNO')} className="w-3.5 h-3.5 accent-[#148D8D]" />
+                      <span className="text-[11px] font-bold text-[#0E2C40]">TIPO I - INTERNO</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="tipoMantenimiento" checked={tipoMantenimiento === 'EXTERNO'} onChange={() => setTipoMantenimiento('EXTERNO')} className="w-3.5 h-3.5 accent-[#148D8D]" />
+                      <span className="text-[11px] font-bold text-[#0E2C40]">TIPO II - EXTERNO</span>
+                    </label>
+                  </div>
+                </div>
+
                 {/* Fila 1: OT, Fecha, Horas */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
@@ -451,6 +485,21 @@ export default function Home() {
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] resize-none"
                   />
                 </div>
+
+                {/* --- NUEVA SECCIÓN: NOTA ADICIONAL --- */}
+                <div className="border-t border-[#148D8D]/15 pt-4 mt-4">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 text-center">
+                    Nota Adicional del Documento
+                  </label>
+                  <textarea
+                    value={nota}
+                    onChange={(e) => setNota(e.target.value)}
+                    rows={2}
+                    placeholder="La nota inferior de la ficha base se extraerá automáticamente aquí..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] resize-none"
+                  />
+                </div>
+
               </div>
 
               {/* Botón Principal (Abajo) */}
