@@ -74,50 +74,72 @@ app.post('/api/procesar-word-auto', upload.single('word'), async (req, res) => {
 
         const resultado = reconociendoMaquinaInteligente(textoDoc, nombreArchivo, excelCacheJson);
 
-        // --- NUEVO: EXTRAER LA NOTA ORIGINAL DEL DOCUMENTO ---
+        // 1. EXTRAER LA NOTA
         let notaExtraida = "";
         const matchNota = textoDoc.match(/Nota:\s*([\s\S]+)$/i); 
         if (matchNota) {
             notaExtraida = matchNota[1].trim(); 
         }
 
-        // --- NUEVO: EXTRAER EL TIPO DE MANTENIMIENTO ---
+        // 2. EXTRAER EL TIPO DE MANTENIMIENTO (LECTURA QUIRÚRGICA DE XML)
         let tipoExtraido = "";
-        // 1. Buscamos si tiene el formato nuevo que creamos: [ X ]
-        if (/TIPO I[\s\-]*INTERNO\s*\[\s*X\s*\]/i.test(textoDoc)) {
-            tipoExtraido = "INTERNO";
-        } else if (/TIPO II[\s\-]*EXTERNO\s*\[\s*X\s*\]/i.test(textoDoc)) {
-            tipoExtraido = "EXTERNO";
-        } 
-        // 2. Por si acaso es un documento viejo con símbolo de Check (☑ o ☒)
-        else if (textoDoc.includes("☑") || textoDoc.includes("☒")) {
-            const posInt = textoDoc.indexOf("TIPO I");
-            const posExt = textoDoc.indexOf("TIPO II");
-            const posCheck = textoDoc.indexOf("☑") !== -1 ? textoDoc.indexOf("☑") : textoDoc.indexOf("☒");
+        try {
+            const PizZip = require('pizzip');
+            const zip = new PizZip(req.file.buffer);
+            let documentXml = zip.file("word/document.xml").asText();
             
-            // Evaluamos cuál palabra ("INTERNO" o "EXTERNO") está más cerca del Check
-            if (posCheck !== -1 && posInt !== -1 && posExt !== -1) {
-                tipoExtraido = Math.abs(posCheck - posInt) < Math.abs(posCheck - posExt) ? "INTERNO" : "EXTERNO";
+            // Aislamos el encabezado para no confundirnos con tablas del cuerpo
+            let headerEndIndex = documentXml.search(/ORDEN(?:<[^>]+>|[\s\t\r\n])*DE(?:<[^>]+>|[\s\t\r\n])*TRABAJO/i);
+            if (headerEndIndex === -1) headerEndIndex = Math.min(4000, documentXml.length);
+
+            let headerXml = documentXml.substring(0, headerEndIndex);
+            let cajitasEncontradas = 0;
+            
+            // Buscamos todas las celdas o cajas de texto del encabezado
+            const regexCajas = /<(w:tc|w:txbxContent)(>| [^>]*>)([\s\S]*?)<\/\1>/g;
+            let matchCaja;
+            
+            while ((matchCaja = regexCajas.exec(headerXml)) !== null) {
+                // Limpiamos el texto que está adentro de la celda
+                const textoLimpio = matchCaja[3].replace(/<[^>]+>/g, '').trim().toUpperCase();
+                
+                // Si la celda está vacía o tiene una "X", la consideramos un checkbox
+                if (textoLimpio === '' || textoLimpio === 'X' || textoLimpio === '[X]') {
+                    cajitasEncontradas++;
+                    
+                    // La primera caja que encontremos con "X" es INTERNO, la segunda es EXTERNO
+                    if (cajitasEncontradas === 1 && textoLimpio.includes('X')) {
+                        tipoExtraido = "INTERNO";
+                    } else if (cajitasEncontradas === 2 && textoLimpio.includes('X')) {
+                        tipoExtraido = "EXTERNO";
+                    }
+                }
             }
+        } catch (err) {
+            console.error("No se pudo escanear el XML para detectar el tipo de mantenimiento:", err);
         }
 
+        // 3. EMPAQUETAR Y ENVIAR AL FRONTEND
+        // Aseguramos de enviar los datos aunque la máquina no se haya autodetectado
+        const datosParaEnviar = resultado.datos || {};
+        datosParaEnviar.nota = notaExtraida;
+        datosParaEnviar.tipo_mantenimiento = tipoExtraido;
+
         if (resultado.encontrado) {
-            resultado.datos.nota = notaExtraida; 
-            resultado.datos.tipo_mantenimiento = tipoExtraido; // <--- ENVIAMOS EL TIPO AL FRONTEND
-            
             return res.json({
                 success: true,
                 autodetectado: true,
                 codigoDetectado: resultado.maquinaNombre,
                 metodo: resultado.metodo,
-                data: resultado.datos
+                data: datosParaEnviar
             });
         } else {
             return res.json({
                 success: true,
                 autodetectado: false,
                 codigoDetectado: "",
-                message: resultado.mensaje
+                message: resultado.mensaje,
+                data: datosParaEnviar
             });
         }
 
