@@ -275,7 +275,75 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
         const zip = new PizZip(docxBuffer);
         let documentXml = zip.file("word/document.xml").asText();
 
+        // --- 0.1 REEMPLAZO TOTAL DE CHECKBOXES (CELDAS Y CAJAS) ---
+        // Delimitamos la búsqueda solo al encabezado (antes de que empiece la Orden de Trabajo)
+        let headerEndIndex = documentXml.search(/ORDEN(?:<[^>]+>|[\s\t\r\n])*DE(?:<[^>]+>|[\s\t\r\n])*TRABAJO/i);
+        if (headerEndIndex === -1) headerEndIndex = Math.min(4000, documentXml.length);
+
+        let headerXml = documentXml.substring(0, headerEndIndex);
+        let bodyXml = documentXml.substring(headerEndIndex);
+
+        let cajitasEncontradas = 0;
+        // Buscamos celdas de tabla (w:tc) o cajas flotantes (w:txbxContent)
+        headerXml = headerXml.replace(/<(w:tc|w:txbxContent)(>| [^>]*>)([\s\S]*?)<\/\1>/g, (match, tag, attrs, content) => {
+            const textoLimpio = content.replace(/<[^>]+>/g, '').trim().toUpperCase();
+            
+            // Detectamos si es una cajita de check (si está vacía o solo tiene la letra X)
+            if (textoLimpio === '' || textoLimpio === 'X' || textoLimpio === '[X]') {
+                cajitasEncontradas++;
+                let mark = ' ';
+                if (cajitasEncontradas === 1) mark = datos.tipo_mantenimiento === 'INTERNO' ? 'X' : ' ';
+                if (cajitasEncontradas === 2) mark = datos.tipo_mantenimiento === 'EXTERNO' ? 'X' : ' ';
+                
+                // Formateamos la caja para que la X se vea centrada, en negrita y tamaño grande (24)
+                return `<${tag}${attrs}<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="24"/></w:rPr><w:t>${mark}</w:t></w:r></w:p></${tag}>`;
+            }
+            return match;
+        });
+
+        documentXml = headerXml + bodyXml;
+
+
+        // --- 0.2 INYECCIÓN DE LA NOTA INFERIOR (CON CREACIÓN AUTOMÁTICA SEGURA) ---
+        if (datos.nota && String(datos.nota).trim() !== "") {
+            const regexNotaTitle = /N(?:<[^>]+>|[\s\t\r\n])*O(?:<[^>]+>|[\s\t\r\n])*T(?:<[^>]+>|[\s\t\r\n])*A(?:<[^>]+>|[\s\t\r\n])*:/i;
+            const matchNota = documentXml.match(regexNotaTitle);
+            
+            // Respetamos los saltos de línea que hayas hecho en el formulario
+            const notaLimpia = String(datos.nota).replace(/\n/g, '<w:br/>');
+            
+            // Diseñamos el nuevo párrafo de la nota (Separación, "Nota:" en negrita)
+            const nuevoParrafo = `<w:p><w:pPr><w:spacing w:before="400" w:after="400"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">Nota: </w:t></w:r><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${notaLimpia}</w:t></w:r></w:p>`;
+
+            if (matchNota) {
+                // ESCENARIO A: Si la plantilla ya tenía una nota original, la borramos y ponemos la nueva.
+                const startP = documentXml.lastIndexOf('<w:p ', matchNota.index);
+                const startP2 = documentXml.lastIndexOf('<w:p>', matchNota.index);
+                const pIndex = Math.max(startP, startP2);
+                const endP = documentXml.indexOf('</w:p>', matchNota.index);
+                
+                if (pIndex !== -1 && endP !== -1) {
+                    documentXml = documentXml.substring(0, pIndex) + nuevoParrafo + documentXml.substring(endP + 6);
+                }
+            } else {
+                // ESCENARIO B: Si la plantilla no tenía nota (como el Montacarga), la creamos al final del documento.
+                // Buscamos el último elemento de contenido (tabla o párrafo) para insertarla justo después.
+                const lastTagIndex = Math.max(documentXml.lastIndexOf('</w:tbl>'), documentXml.lastIndexOf('</w:p>'));
+                
+                if (lastTagIndex !== -1) {
+                    // El +1 asegura que lo pegamos exactamente después de que se cierra la última tabla
+                    const insertPos = documentXml.indexOf('>', lastTagIndex) + 1;
+                    documentXml = documentXml.substring(0, insertPos) + nuevoParrafo + documentXml.substring(insertPos);
+                }
+            }
+        }
+
         const conservarEtiquetas = (str) => (str || "").replace(/(^|>)[^<]+(<|$)/g, '$1$2');
+
+        // ... MANTÉN EL RESTO DE TU CÓDIGO IGUAL A PARTIR DE AQUÍ 
+        // (0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA...)
+
+
 
         // 0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA (Seguro y delimitado)
         if (datos.codigo && String(datos.codigo).trim() !== "") {
