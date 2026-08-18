@@ -164,9 +164,10 @@ app.post('/api/consultar-maquina', (req, res) => {
 // PASO FINAL: Generar documento Word
 app.post('/api/generar-ficha', upload.single('file'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ detail: "No se ha subido el documento Word base." });
+        if (!req.file) {
+            return res.status(400).json({ detail: "No se ha subido el documento Word base." });
+        }
 
-        // --- NUEVO: RECEPCIÓN DE TIPO Y NOTA ---
         const datosFormulario = {
             codigo: req.body.codigo || '',
             orden_trabajo: req.body.orden_trabajo || '',
@@ -177,11 +178,13 @@ app.post('/api/generar-ficha', upload.single('file'), async (req, res) => {
             fecha: req.body.fecha || '',
             horas: req.body.horas || '',
             diagnostico: req.body.diagnostico || '',
+            // 👇 AÑADE ESTAS DOS LÍNEAS 👇
             tipo_mantenimiento: req.body.tipo_mantenimiento || '',
             nota: req.body.nota || ''
         };
 
         const resultado = await procesarFicha(req.file.buffer, datosFormulario);
+// ... resto del código ...
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.setHeader('Content-Disposition', `attachment; filename="${resultado.nombreSalida}.docx"`);

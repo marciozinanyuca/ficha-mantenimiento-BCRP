@@ -304,45 +304,54 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
         documentXml = headerXml + bodyXml;
 
 
-        // --- 0.2 INYECCIÓN DE LA NOTA INFERIOR (CON CREACIÓN AUTOMÁTICA SEGURA) ---
+// --- 0.2 INYECCIÓN DE LA NOTA INFERIOR (MÉTODO SEGURO ANTI-CORRUPCIÓN) ---
         if (datos.nota && String(datos.nota).trim() !== "") {
+            // 1. Borramos la nota vieja (si existe en cualquier parte del documento)
             const regexNotaTitle = /N(?:<[^>]+>|[\s\t\r\n])*O(?:<[^>]+>|[\s\t\r\n])*T(?:<[^>]+>|[\s\t\r\n])*A(?:<[^>]+>|[\s\t\r\n])*:/i;
             const matchNota = documentXml.match(regexNotaTitle);
-            
-            // Respetamos los saltos de línea que hayas hecho en el formulario
-            const notaLimpia = String(datos.nota).replace(/\n/g, '<w:br/>');
-            
-            // Diseñamos el nuevo párrafo de la nota (Separación, "Nota:" en negrita)
-            const nuevoParrafo = `<w:p><w:pPr><w:spacing w:before="400" w:after="400"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">Nota: </w:t></w:r><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${notaLimpia}</w:t></w:r></w:p>`;
-
             if (matchNota) {
-                // ESCENARIO A: Si la plantilla ya tenía una nota original, la borramos y ponemos la nueva.
                 const startP = documentXml.lastIndexOf('<w:p ', matchNota.index);
                 const startP2 = documentXml.lastIndexOf('<w:p>', matchNota.index);
                 const pIndex = Math.max(startP, startP2);
                 const endP = documentXml.indexOf('</w:p>', matchNota.index);
-                
                 if (pIndex !== -1 && endP !== -1) {
-                    documentXml = documentXml.substring(0, pIndex) + nuevoParrafo + documentXml.substring(endP + 6);
+                    documentXml = documentXml.substring(0, pIndex) + documentXml.substring(endP + 6);
                 }
-            } else {
-                // ESCENARIO B: Si la plantilla no tenía nota (como el Montacarga), la creamos al final del documento.
-                // Buscamos el último elemento de contenido (tabla o párrafo) para insertarla justo después.
-                const lastTagIndex = Math.max(documentXml.lastIndexOf('</w:tbl>'), documentXml.lastIndexOf('</w:p>'));
-                
-                if (lastTagIndex !== -1) {
-                    // El +1 asegura que lo pegamos exactamente después de que se cierra la última tabla
-                    const insertPos = documentXml.indexOf('>', lastTagIndex) + 1;
-                    documentXml = documentXml.substring(0, insertPos) + nuevoParrafo + documentXml.substring(insertPos);
+            }
+
+            // 2. Buscamos la ÚLTIMA tabla con VERDADERO CONTENIDO (Ignorando tablas fantasma)
+            const regexTabla = /<w:tbl(?:>| [^>]*>)[\s\S]*?<\/w:tbl>/g;
+            let matchTbl;
+            let insertPos = -1;
+            
+            while ((matchTbl = regexTabla.exec(documentXml)) !== null) {
+                // Extraemos todo el texto de la tabla, si tiene letras, es una tabla real
+                const textoTabla = matchTbl[0].replace(/<[^>]+>/g, '').trim();
+                if (textoTabla.length > 0) {
+                    // Guardamos la posición exacta al cerrar esta tabla real
+                    insertPos = matchTbl.index + matchTbl[0].length;
                 }
+            }
+            
+            if (insertPos === -1) {
+                // Respaldo de seguridad por si el documento no tiene tablas
+                const sectPr = documentXml.lastIndexOf('<w:sectPr');
+                insertPos = sectPr !== -1 ? sectPr : documentXml.lastIndexOf('</w:body>');
+            }
+
+            // 3. Insertamos la Nota justo debajo de la tabla (empujando la basura hacia abajo)
+            const notaLimpia = String(datos.nota).replace(/\n/g, '<w:br/>');
+            const nuevoParrafo = `<w:p><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">Nota: </w:t></w:r><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${notaLimpia}</w:t></w:r></w:p>`;
+
+            if (insertPos !== -1) {
+                // Simplemente pegamos la nota aquí. No borramos nada para evitar corromper el XML.
+                documentXml = documentXml.substring(0, insertPos) + nuevoParrafo + documentXml.substring(insertPos);
             }
         }
 
+        
+
         const conservarEtiquetas = (str) => (str || "").replace(/(^|>)[^<]+(<|$)/g, '$1$2');
-
-        // ... MANTÉN EL RESTO DE TU CÓDIGO IGUAL A PARTIR DE AQUÍ 
-        // (0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA...)
-
 
 
         // 0. REEMPLAZO DE CÓDIGO O NOMBRE DE MÁQUINA (Seguro y delimitado)
