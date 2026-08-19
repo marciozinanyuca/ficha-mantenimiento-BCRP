@@ -30,9 +30,25 @@ function obtenerDataframeExcel(localPath = EXCEL_LOCAL_PATH) {
     return XLSX.utils.sheet_to_json(sheet, { header: 1 });
 }
 
-/**
- * Extrae datos de la fila de Excel respetando celdas vacías y detectando falta de información
- */
+
+function obtenerIndiceMaquina(jsonRows) {
+    // Escanea las primeras 25 filas buscando en qué columna exacta está la palabra "MÁQUINA"
+    for (let r = 0; r < Math.min(25, jsonRows.length); r++) {
+        if (!jsonRows[r]) continue;
+        for (let idx = 0; idx < jsonRows[r].length; idx++) {
+            const cell = jsonRows[r][idx];
+            if (typeof cell === 'string' && /M[AÁ]QUINA/i.test(cell)) {
+                return idx; // Retorna el número de la columna (ej. 0 para 2026, 1 para 2025)
+            }
+        }
+    }
+    return 1; // Respaldo por defecto
+}
+
+
+
+
+
 /**
  * Extrae datos de la fila de Excel de forma estricta (sin inventar datos si está vacío)
  */
@@ -43,7 +59,7 @@ function extraerCamposFila(fila, nombreMaquina, jsonRows) {
     let idxTecnico1 = -1, idxTecnico2 = -1, idxTecnico3 = -1, idxTecnico4 = -1;
 
     // 1. Escaneo de Encabezados
-    for (let r = 0; r < Math.min(12, jsonRows.length); r++) {
+    for (let r = 0; r < Math.min(25, jsonRows.length); r++) {
         const rowHeader = jsonRows[r];
         if (!rowHeader) continue;
 
@@ -148,12 +164,16 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
         return datosExtraidos;
     };
 
+// --- NUEVO: RASTREO DINÁMICO DE COLUMNA ---
+    const idxMaquina = obtenerIndiceMaquina(jsonRows);
+
     const maquinasExcel = [];
     jsonRows.forEach((row, idx) => {
-        if (row && row[1] && typeof row[1] === 'string') {
-            const nombreOriginal = row[1].trim();
+        // Ahora lee 'row[idxMaquina]' en lugar de estar fijado a 'row[1]'
+        if (row && row[idxMaquina] && typeof row[idxMaquina] === 'string') {
+            const nombreOriginal = row[idxMaquina].trim();
             const nombreNorm = normalizarTexto(nombreOriginal);
-            if (nombreNorm && !nombreNorm.includes("MAQUINA") && !nombreNorm.includes("MANTENIMIENTO")) {
+            if (nombreNorm && !nombreNorm.includes("MAQUINA") && !nombreNorm.includes("MANTENIMIENTO") && !nombreNorm.includes("ELABORADO") && !nombreNorm.includes("FECHA") && !nombreNorm.includes("AREA")) {
                 maquinasExcel.push({ index: idx, row: row, nombreOriginal: nombreOriginal, nombreNorm: nombreNorm });
             }
         }
@@ -236,16 +256,20 @@ function reconociendoMaquinaInteligente(textoWord, nombreArchivo, excelFuente = 
 function consultarDatosMaquina(identificadorMaquina, excelFuente = EXCEL_LOCAL_PATH) {
     let jsonRows = Array.isArray(excelFuente) ? excelFuente : obtenerDataframeExcel(excelFuente);
     const idLimpio = normalizarTexto(identificadorMaquina);
+    
+    // --- NUEVO: RASTREO DINÁMICO DE COLUMNA ---
+    const idxMaquina = obtenerIndiceMaquina(jsonRows);
 
     let filaEncontrada = null;
     let nombreEnc = identificadorMaquina;
 
     for (const row of jsonRows) {
-        if (!row || !row[1]) continue;
-        const nombreRow = normalizarTexto(row[1]);
+        // Ahora busca en la columna rastreada
+        if (!row || !row[idxMaquina]) continue;
+        const nombreRow = normalizarTexto(row[idxMaquina]);
         if (nombreRow.includes(idLimpio) || idLimpio.includes(nombreRow)) {
             filaEncontrada = row;
-            nombreEnc = row[1];
+            nombreEnc = row[idxMaquina];
             break;
         }
     }
@@ -256,7 +280,6 @@ function consultarDatosMaquina(identificadorMaquina, excelFuente = EXCEL_LOCAL_P
 
     return extraerCamposFila(filaEncontrada, nombreEnc, jsonRows);
 }
-
 
 /**
  * Reemplazo de Zona Aislada: Aniquila números fragmentados (ej. "20" y "24") 
@@ -639,7 +662,7 @@ function obtenerListaMaquinas(jsonRows) {
     let maquinas = [];
 
     // 1. Buscar en qué columna y en qué fila está el encabezado "MÁQUINA"
-    for (let r = 0; r < Math.min(12, jsonRows.length); r++) {
+    for (let r = 0; r < Math.min(25, jsonRows.length); r++) {
         const rowHeader = jsonRows[r];
         if (!rowHeader) continue;
 

@@ -43,7 +43,7 @@ app.post('/api/cargar-excel', upload.single('excel'), (req, res) => {
         if (!workbook.SheetNames.includes('PLAN.MANT')) return res.status(400).json({ detail: "El Excel no contiene la hoja 'PLAN.MANT'." });
 
         const sheet = workbook.Sheets['PLAN.MANT'];
-        excelCacheJson = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 9 });
+        excelCacheJson = XLSX.utils.sheet_to_json(sheet, { header: 1});
         const maquinasDisponibles = obtenerListaMaquinas(excelCacheJson);
 
         return res.json({ 
