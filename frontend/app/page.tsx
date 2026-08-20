@@ -372,7 +372,7 @@ export default function Home() {
                   <div className="relative flex-1">
                     <input
                       type="text"
-                      placeholder="Escribe para buscar (Ej. BRAZO)..."
+                      placeholder="Escribe para buscar (Ej. ACUÑADORA)..."
                       value={codigo}
                       onChange={(e) => {
                         setCodigo(e.target.value);
