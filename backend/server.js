@@ -74,11 +74,17 @@ app.post('/api/procesar-word-auto', upload.single('word'), async (req, res) => {
 
         const resultado = reconociendoMaquinaInteligente(textoDoc, nombreArchivo, excelCacheJson);
 
-        // 1. EXTRAER LA NOTA
+// 1. EXTRAER LA NOTA
         let notaExtraida = "";
         const matchNota = textoDoc.match(/Nota:\s*([\s\S]+)$/i); 
         if (matchNota) {
             notaExtraida = matchNota[1].trim(); 
+        }
+
+        let areaExtraida = "";
+        const matchArea = textoDoc.match(/AREA\s*:\s*([^\n\r]+)/i);
+        if (matchArea) {
+            areaExtraida = matchArea[1].trim();
         }
 
         // 2. EXTRAER EL TIPO DE MANTENIMIENTO (LECTURA QUIRÚRGICA DE XML)
@@ -124,6 +130,7 @@ app.post('/api/procesar-word-auto', upload.single('word'), async (req, res) => {
         const datosParaEnviar = resultado.datos || {};
         datosParaEnviar.nota = notaExtraida;
         datosParaEnviar.tipo_mantenimiento = tipoExtraido;
+        datosParaEnviar.area = areaExtraida;
 
         if (resultado.encontrado) {
             return res.json({
@@ -178,9 +185,9 @@ app.post('/api/generar-ficha', upload.single('file'), async (req, res) => {
             fecha: req.body.fecha || '',
             horas: req.body.horas || '',
             diagnostico: req.body.diagnostico || '',
-            // 👇 AÑADE ESTAS DOS LÍNEAS 👇
             tipo_mantenimiento: req.body.tipo_mantenimiento || '',
-            nota: req.body.nota || ''
+            nota: req.body.nota || '',
+            area: req.body.area || ''
         };
 
         const resultado = await procesarFicha(req.file.buffer, datosFormulario);

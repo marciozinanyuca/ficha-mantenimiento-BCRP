@@ -413,6 +413,40 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
             }
         }
 
+        // 0.5 REEMPLAZO DE ÁREA
+        if (datos.area && String(datos.area).trim() !== "") {
+            const areaNueva = String(datos.area).trim().toUpperCase();
+            const regexKeywordArea = /A(?:<[^>]+>)*R(?:<[^>]+>)*E(?:<[^>]+>)*A(?:<[^>]+>|[\s\t\r\n])*:/i;
+
+            const keywordAreaMatch = documentXml.match(regexKeywordArea);
+            if (keywordAreaMatch) {
+                const partes = documentXml.split(keywordAreaMatch[0]);
+                if (partes.length > 1) {
+                    let subXml = partes[1];
+                    let primerNodoEncontrado = false;
+                    let contadorNodosModificados = 0;
+
+                    // Reemplazo seguro de los caracteres de la derecha
+                    subXml = subXml.replace(/(<w:t[^>]*>)([^<]*?)(<\/w:t>)/gi, (match, openTag, contenido, closeTag, offset) => {
+                        if (offset < 200) {
+                            if (contenido.trim() !== "" && !/^[:\s]*$/.test(contenido)) {
+                                if (!primerNodoEncontrado) {
+                                    primerNodoEncontrado = true;
+                                    contadorNodosModificados++;
+                                    return `${openTag}${areaNueva}${closeTag}`; 
+                                } else if (contadorNodosModificados < 3) {
+                                    contadorNodosModificados++;
+                                    return `${openTag}${closeTag}`;
+                                }
+                            }
+                        }
+                        return match;
+                    });
+                    documentXml = partes[0] + keywordAreaMatch[0] + subXml;
+                }
+            }
+        }
+
 
 
 
@@ -519,7 +553,7 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
             return nuevoBloque + limiteFinal;
         });
 
-        // 4. REEMPLAZO DE HORAS REALES (Por si se escriben letras)
+// 4. REEMPLAZO DE HORAS REALES (Por si se escriben letras)
         let horasNueva = " ";
         if (datos.horas && String(datos.horas).trim() !== "") {
             const horasStr = String(datos.horas).trim().toUpperCase();
@@ -533,12 +567,42 @@ async function actualizarPlantillaWord(docxBuffer, datos) {
         if (keywordMatch) {
             const partes = documentXml.split(keywordMatch[0]);
             if (partes.length > 1) {
-                partes[1] = partes[1].replace(/>([\s\t\r\n]*)\d+(?:\.\d+)?/i, `>$1${horasNueva}`);
-                documentXml = partes.join(keywordMatch[0]);
+                // Aislamos únicamente la celda/fila donde están las horas
+                const finFila = partes[1].search(/<\/w:tr>|<\/w:txbxContent>/i);
+                if (finFila !== -1) {
+                    let area = partes[1].substring(0, finFila);
+                    let resto = partes[1].substring(finFila);
+                    
+                    let numeroInsertado = false;
+                    
+                    // Escaneamos el texto interno de la celda
+                    area = area.replace(/(<w:t[^>]*>)([^<]*?)(<\/w:t>)/gi, (m, openTag, texto, closeTag) => {
+                        let textoMayus = texto.toUpperCase();
+                        
+                        // Si detectamos números, puntos o la palabra HORAS
+                        if (/[0-9]/.test(textoMayus) || textoMayus.includes('HORAS') || textoMayus.includes('.')) {
+                            // Borramos por completo números, puntos y HORAS, manteniendo espacios u otros signos
+                            let textoVaciado = texto.replace(/[0-9\.]/g, '').replace(/HORAS/gi, '');
+                            
+                            if (!numeroInsertado) {
+                                numeroInsertado = true;
+                                // Estampamos el número nuevo
+                                return `${openTag}${textoVaciado}${horasNueva}${closeTag}`;
+                            } else {
+                                // Dejamos vacías las siguientes celdas que tenían ".00" u "HORAS"
+                                return `${openTag}${textoVaciado}${closeTag}`;
+                            }
+                        }
+                        return m;
+                    });
+                    
+                    documentXml = partes[0] + keywordMatch[0] + area + resto;
+                }
             }
         } else {
+            // Respaldo por si no se encontró el título
             documentXml = documentXml.replace(/(\d+(\.\d+)?)\s*HORAS/gi, (match) => {
-                return horasNueva + " " + conservarEtiquetas(match).replace(/\d+(\.\d+)?\s*/g, '');
+                return horasNueva + conservarEtiquetas(match).replace(/\d+(\.\d+)?\s*HORAS/gi, '');
             });
         }
 

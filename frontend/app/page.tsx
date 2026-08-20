@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   CheckCircle,
@@ -17,9 +17,10 @@ import {
 export default function Home() {
   const [diagnostico, setDiagnostico] = useState('');
   
-  // --- NUEVOS ESTADOS PARA TIPO DE MANTENIMIENTO Y NOTA ---
+  // Estados para Tipo de Mantenimiento, Nota y Área
   const [tipoMantenimiento, setTipoMantenimiento] = useState<'INTERNO' | 'EXTERNO' | ''>('');
   const [nota, setNota] = useState('');
+  const [area, setArea] = useState('');
 
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [wordFile, setWordFile] = useState<File | null>(null);
@@ -40,19 +41,19 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | ''; text: string }>({ type: '', text: '' });
   const [jsReady, setJsReady] = useState(false);
   const [listaMaquinas, setListaMaquinas] = useState<string[]>([]);
+  
+  // Estados y Referencias para el Buscador Predictivo
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+  const [verTodo, setVerTodo] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Opción limpia y directa: Si existe el .env.local lo usa, de lo contrario usa localhost:8000
   const [backendUrl, setBackendUrl] = useState<string>('http://localhost:8000');
 
+  // EFECTO 1: Detectar URL del backend
   useEffect(() => {
     setJsReady(true);
-
-    // Prioridad 1: Variable de entorno de .env.local (Codespaces / Producción)
-    // Prioridad 2: Respaldo a localhost:8000 (PC Local)
     let urlEnvLocal = process.env.NEXT_PUBLIC_API_URL;
-
     if (urlEnvLocal && urlEnvLocal.trim() !== '') {
-      // Limpiamos la URL: si tiene un "/" al final, se lo quitamos para evitar el error "//"
       urlEnvLocal = urlEnvLocal.trim().replace(/\/$/, '');
       setBackendUrl(urlEnvLocal);
     } else {
@@ -60,7 +61,25 @@ export default function Home() {
     }
   }, []);
 
-const mapearDatosFormulario = (data: any) => {
+  // EFECTO 2: Detector de clics fuera del cuadro de búsqueda para ocultarlo
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setMostrarSugerencias(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+// MOTOR DE BÚSQUEDA PREDICTIVO
+  const maquinasFiltradas = listaMaquinas.filter((maq) =>
+    maq.toLowerCase().includes(codigo.toLowerCase())
+  );
+  // Si 'verTodo' está activo, mostramos el catálogo entero. Si no, mostramos lo que filtró.
+  const opcionesAMostrar = verTodo ? listaMaquinas : maquinasFiltradas;
+
+  const mapearDatosFormulario = (data: any) => {
     setOrdenTrabajo(data.orden_trabajo || '');
     setTecnico1(data.tecnico1 || '');
     setTecnico2(data.tecnico2 || '');
@@ -69,19 +88,10 @@ const mapearDatosFormulario = (data: any) => {
     setFecha(data.fecha || '');
     setHoras(data.horas || '');
 
-    if (data.diagnostico !== undefined) {
-      setDiagnostico(data.diagnostico || '');
-    }
-    
-    // Mapeo de la nota extraída
-    if (data.nota !== undefined) {
-      setNota(data.nota || '');
-    }
-
-    // --- NUEVO: MAPEO DEL TIPO DE MANTENIMIENTO ---
-    if (data.tipo_mantenimiento) {
-      setTipoMantenimiento(data.tipo_mantenimiento as 'INTERNO' | 'EXTERNO');
-    }
+    if (data.diagnostico !== undefined) setDiagnostico(data.diagnostico || '');
+    if (data.nota !== undefined) setNota(data.nota || '');
+    if (data.area !== undefined) setArea(data.area || '');
+    if (data.tipo_mantenimiento) setTipoMantenimiento(data.tipo_mantenimiento as 'INTERNO' | 'EXTERNO');
   };
 
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -210,6 +220,7 @@ const mapearDatosFormulario = (data: any) => {
   const handleSearchManual = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      setMostrarSugerencias(false); // Ocultamos lista al presionar enter
       buscarMaquina(codigo);
     }
   };
@@ -232,9 +243,9 @@ const mapearDatosFormulario = (data: any) => {
     formData.append('fecha', fecha);
     formData.append('horas', horas);
     formData.append('diagnostico', diagnostico);
-    // --- NUEVO: ENVÍO DE TIPO Y NOTA ---
     formData.append('tipo_mantenimiento', tipoMantenimiento);
     formData.append('nota', nota);
+    formData.append('area', area); // Área incluida aquí
 
     try {
       const response = await fetch(`${backendUrl}/api/generar-ficha`, {
@@ -270,7 +281,7 @@ const mapearDatosFormulario = (data: any) => {
     <main className="min-h-screen bg-[#D5EAD8] bg-linear-to-tr from-[#C1E1A7]/40 via-[#D5EAD8] to-[#E6F0E3] flex flex-col items-center justify-center p-4 md:p-6 font-sans">
 
       {/* Tarjeta Central (max-w-6xl) */}
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-[#148D8D]/20 px-6 py-6 md:px-10 md:py-8 relative transition-all duration-300">
+      <div className="w-full max-w-[1400px] bg-white rounded-2xl shadow-xl shadow-slate-900/5 border border-[#148D8D]/20 px-6 py-6 md:px-10 md:py-8 relative transition-all duration-300">
 
         {/* Encabezado Principal */}
         <div className="text-center mb-8 border-b border-[#148D8D]/20 pb-6">
@@ -301,15 +312,11 @@ const mapearDatosFormulario = (data: any) => {
           </div>
         </div>
 
-        {/* SISTEMA DE CUADRÍCULA (GRID): 2 Columnas en PC, 1 en Móviles */}
+        {/* SISTEMA DE CUADRÍCULA (GRID) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-          {/* =========================================
-              COLUMNA IZQUIERDA: Carga de Archivos (Paso 1 y 2)
-              ========================================= */}
+          {/* COLUMNA IZQUIERDA: Carga de Archivos */}
           <div className="lg:col-span-5 space-y-6">
-
-            {/* PASO 1: EXCEL */}
             <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm">
               <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-3 flex items-center justify-between">
                 <span>PASO 1: Plan Anual (.xlsx)</span>
@@ -328,7 +335,6 @@ const mapearDatosFormulario = (data: any) => {
               )}
             </div>
 
-            {/* PASO 2: WORD */}
             <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
               <label className="block text-[11px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-3 flex items-center justify-between">
                 <span>PASO 2: Plantilla Anterior (.docx)</span>
@@ -346,69 +352,114 @@ const mapearDatosFormulario = (data: any) => {
                 </p>
               )}
             </div>
-
           </div>
 
-          {/* =========================================
-              COLUMNA DERECHA: Formulario (Paso 3)
-              ========================================= */}
+          {/* COLUMNA DERECHA: Formulario */}
           <div className="lg:col-span-7">
             <form onSubmit={handleSubmitFinal} className="animate-fade-in h-full flex flex-col justify-between">
 
-              {/* Título de la Columna */}
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#148D8D] uppercase tracking-wider mb-5">
                 <Sparkles className="w-4 h-4" />
                 <span>PASO 3: Confirmación de Datos Operativos</span>
               </div>
 
-              {/* Barra de Búsqueda de Máquina */}
-              <div className="mb-5">
+{/* BARRA DE BÚSQUEDA PREDICTIVA */}
+              <div className="mb-5 relative" ref={dropdownRef}>
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1.5">
-                  Código o Nombre de Máquina (Presiona ENTER)
+                  Código o Nombre de Máquina
                 </label>
                 <div className="flex gap-2 relative">
                   <div className="relative flex-1">
                     <input
                       type="text"
-                      placeholder="Ej. MONTACARGA YALE"
+                      placeholder="Escribe para buscar (Ej. BRAZO)..."
                       value={codigo}
-                      onChange={(e) => setCodigo(e.target.value)}
+                      onChange={(e) => {
+                        setCodigo(e.target.value);
+                        setMostrarSugerencias(true);
+                        setVerTodo(false); // Si empieza a escribir, vuelve a filtrar
+                      }}
+                      onFocus={() => {
+                        setMostrarSugerencias(true);
+                        setVerTodo(false); // Si hace clic en la barra, empieza a filtrar
+                      }}
                       onKeyDown={handleSearchManual}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[#0E2C40] font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-[#148D8D] shadow-sm pr-10"
                     />
                     <div className="absolute right-3 top-2.5 text-[#148D8D]">
                       {searching ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                     </div>
+
+                    {/* CUADRO FLOTANTE DE SUGERENCIAS */}
+                    {mostrarSugerencias && listaMaquinas.length > 0 && (
+                      <ul className="absolute z-50 w-full bg-white border border-[#148D8D]/30 rounded-xl mt-2 max-h-60 overflow-y-auto shadow-2xl overflow-hidden divide-y divide-slate-100">
+                        {opcionesAMostrar.length > 0 ? (
+                          opcionesAMostrar.map((maq, index) => {
+                            const esSeleccionada = maq === codigo;
+                            return (
+                              <li
+                                key={index}
+                                id={esSeleccionada ? 'maq-activa' : undefined} // ID especial para enfocarla
+                                className={`px-4 py-3 text-[11px] font-bold cursor-pointer transition-colors ${
+                                  esSeleccionada
+                                    ? 'bg-[#148D8D] text-white' // Si es la seleccionada, se pinta de verde
+                                    : 'text-[#0E2C40] hover:bg-[#148D8D]/10 hover:text-[#148D8D]'
+                                }`}
+                                onClick={() => {
+                                  setCodigo(maq);
+                                  setMostrarSugerencias(false);
+                                  setVerTodo(false);
+                                  buscarMaquina(maq);
+                                }}
+                              >
+                                {maq}
+                              </li>
+                            );
+                          })
+                        ) : (
+                          <li className="px-4 py-3 text-[11px] text-slate-400 italic text-center">
+                            No se encontraron coincidencias
+                          </li>
+                        )}
+                      </ul>
+                    )}
                   </div>
 
-                  <div className="relative w-12 flex-shrink-0 bg-slate-100 border border-slate-200 hover:bg-[#148D8D]/10 hover:border-[#148D8D]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer group" title="Catálogo de máquinas">
-                    <select
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-black"
-                      value=""
-                      onChange={(e) => {
-                        const nuevaMaquina = e.target.value;
-                        if (nuevaMaquina) {
-                          setCodigo(nuevaMaquina);
-                          buscarMaquina(nuevaMaquina);
-                        }
-                      }}
-                    >
-                      <option value="" disabled className="text-black">Seleccionar otra máquina...</option>
-                      {listaMaquinas.map((maq, index) => (
-                        <option key={index} value={maq} className="text-[#444f56] font-medium">{maq}</option>
-                      ))}
-                    </select>
+{/* BOTÓN PARA ABRIR/CERRAR CATÁLOGO (INTERRUPTOR) */}
+                  <button
+                    type="button"
+                    className="relative w-12 flex-shrink-0 bg-slate-100 border border-slate-200 hover:bg-[#148D8D]/10 hover:border-[#148D8D]/30 rounded-xl flex items-center justify-center transition-colors cursor-pointer group"
+                    title="Alternar lista completa de máquinas"
+                    onClick={() => {
+                      if (!mostrarSugerencias) {
+                        setVerTodo(true); 
+                        setMostrarSugerencias(true);
+                        
+                        // Salto instantáneo y directo (sin animaciones lentas)
+                        setTimeout(() => {
+                          const activeEl = document.getElementById('maq-activa');
+                          if (activeEl) {
+                            // 'auto' hace que salte de golpe en lugar de deslizarse
+                            activeEl.scrollIntoView({ behavior: 'auto', block: 'center' });
+                          }
+                        }, 0); // Tiempo 0 para que ocurra en el mismo instante que se abre
+                      } else {
+                        setMostrarSugerencias(false);
+                        setVerTodo(false);
+                      }
+                    }}
+                  >
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-slate-500 group-hover:text-[#148D8D]" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                     </svg>
-                  </div>
+                  </button>
                 </div>
               </div>
 
               {/* Contenedor Verde del Formulario */}
               <div className="bg-[#148D8D]/5 p-5 rounded-xl border border-[#148D8D]/20 mb-6">
-
-                {/* --- NUEVA SECCIÓN: TIPO DE MANTENIMIENTO --- */}
+                
+                {/* Clasificación del Mantenimiento */}
                 <div className="flex flex-col items-center justify-center mb-4 border-b border-[#148D8D]/15 pb-4">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2">
                     Clasificación del Mantenimiento
@@ -425,13 +476,19 @@ const mapearDatosFormulario = (data: any) => {
                   </div>
                 </div>
 
-                {/* Fila 1: OT, Fecha, Horas */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {/* Fila 1: OT, Área, Fecha, Horas */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
                       Orden (OT)
                     </label>
                     <input type="text" value={ordenTrabajo} onChange={(e) => setOrdenTrabajo(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-extrabold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
+                      Área
+                    </label>
+                    <input type="text" value={area} onChange={(e) => setArea(e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-[#0E2C40] font-semibold text-sm text-center outline-none focus:border-[#148D8D] shadow-sm" />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-1 text-center">
@@ -486,7 +543,7 @@ const mapearDatosFormulario = (data: any) => {
                   />
                 </div>
 
-                {/* --- NUEVA SECCIÓN: NOTA ADICIONAL --- */}
+                {/* Fila 4: Nota Adicional */}
                 <div className="border-t border-[#148D8D]/15 pt-4 mt-4">
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-[#1A4A5A] mb-2 text-center">
                     Nota Adicional del Documento
@@ -499,7 +556,6 @@ const mapearDatosFormulario = (data: any) => {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-[#0E2C40] font-medium text-xs outline-none focus:border-[#148D8D] resize-none"
                   />
                 </div>
-
               </div>
 
               {/* Botón Principal (Abajo) */}
@@ -527,9 +583,7 @@ const mapearDatosFormulario = (data: any) => {
           </div>
         </div>
 
-        {/* =========================================
-            ZONA DE MENSAJES (Debajo del Grid)
-            ========================================= */}
+        {/* MENSAJES INFERIORES */}
         {statusMessage.text && (
           <div className={`mt-6 text-xs font-bold p-4 rounded-xl border transition-all duration-300 text-center flex items-center justify-center gap-2 ${statusMessage.type === 'success'
             ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
