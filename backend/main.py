@@ -177,6 +177,8 @@ async def procesar_word_auto(word: UploadFile = File(...)):
     maquina_oficial = None
     area = ""
     tipo_mantenimiento = ""
+    diagnostico_encontrado = ""
+    nota_encontrada = ""
 
     # PRIORIDAD 1: Buscar usando el Nombre del Archivo (Indestructible)
     filename_limpio = word.filename.upper().replace(".DOCX", "").replace(".DOC", "")
@@ -196,36 +198,56 @@ async def procesar_word_auto(word: UploadFile = File(...)):
             for row in table.rows:
                 for cell in row.cells: texto_completo.append(cell.text)
                 if len(row.cells) >= 2:
-                    col1_norm = normalizar_texto(row.cells[0].text)
-                    if ("MAQUINA O EQUIPO" in col1_norm or "CODIGO" in col1_norm) and not codigo_interno:
-                        codigo_interno = str(row.cells[1].text).strip()
-                    elif "AREA" in col1_norm and not area: 
-                        area = str(row.cells[1].text).strip()
+                    col0_norm = normalizar_texto(row.cells[0].text)
+                    col1_text = row.cells[1].text.strip()
+                    
+                    if ("MAQUINA O EQUIPO" in col0_norm or "CODIGO" in col0_norm) and not codigo_interno:
+                        codigo_interno = col1_text
+                    elif "AREA" in col0_norm and not area: 
+                        area = col1_text
+                    elif "DIAGNOSTICO" in col0_norm and not diagnostico_encontrado:
+                        texto_celda = row.cells[1].text.strip() if len(row.cells) >= 2 else ""
+                        if texto_celda:
+                            # Limpiar prefijos si la celda arrastró la etiqueta
+                            texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', texto_celda, flags=re.IGNORECASE)
+                            diagnostico_encontrado = texto_limpio.strip().upper()
 
         # B) Escaneo de Párrafos
         for p in doc.paragraphs:
             texto_completo.append(p.text)
             p_norm = normalizar_texto(p.text)
+            p_text = p.text.strip()
             
             if not codigo_interno:
                 if "MAQUINA O EQUIPO" in p_norm or "CODIGO DE LA MAQUINA" in p_norm:
-                    if ":" in p.text: codigo_interno = p.text.split(":", 1)[1].strip()
+                    if ":" in p_text: codigo_interno = p_text.split(":", 1)[1].strip()
                     else: codigo_interno = p_norm.split("EQUIPO")[-1].strip()
             if not area:
-                if "AREA" in p_norm and ":" in p.text:
-                    area = p.text.split(":", 1)[1].strip()
+                if "AREA" in p_norm and ":" in p_text:
+                    area = p_text.split(":", 1)[1].strip()
+            if not diagnostico_encontrado and "DIAGNOSTICO" in p_norm:
+                if ":" in p_text:
+                    val = p_text.split(":", 1)[1].strip()
+                else:
+                    val = p_text
+                # Limpiar cualquier residuo de la etiqueta al inicio
+                texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', val, flags=re.IGNORECASE)
+                diagnostico_encontrado = texto_limpio.strip().upper()
+            if not nota_encontrada and "NOTA" in p_norm:
+                if ":" in p_text:
+                    nota_encontrada = p_text.split(":", 1)[1].strip().upper()
+                else:
+                    nota_encontrada = p_text.upper()
 
         # C) INTELIGENCIA EXTREMA PARA "TIPO DE MANTENIMIENTO"
         texto_unido = "\n".join(texto_completo).upper()
         texto_sin_espacios = re.sub(r'\s+', '', texto_unido)
         
-        # 1. Búsqueda exacta (Formato Nuevo)
         if "[X]TIPOII" in texto_sin_espacios or "☒TIPOII" in texto_sin_espacios or "☑TIPOII" in texto_sin_espacios:
             tipo_mantenimiento = "EXTERNO"
         elif "[X]TIPOI" in texto_sin_espacios or "☒TIPOI" in texto_sin_espacios or "☑TIPOI" in texto_sin_espacios:
             tipo_mantenimiento = "INTERNO"
         else:
-            # 2. Algoritmo de "Radar" mejorado
             match_t1 = re.search(r'TIPO\s*I\b(?!I)', texto_unido)
             match_t2 = re.search(r'TIPO\s*I{2}\b', texto_unido)
             
@@ -247,21 +269,16 @@ async def procesar_word_auto(word: UploadFile = File(...)):
                         mejor_distancia = dist2; tipo_mantenimiento = "EXTERNO"
 
     except Exception:
-        # Si el Word está dañado o tiene formato viejo, ignoramos la lectura interna
-        # El sistema no se detendrá y usará el Nombre del Archivo de la Prioridad 1
         pass
 
-    # ====================================================================
-    # D) LECTURA XML DIRECTA (Cazador de Cuadros de Texto Invisibles)
-    # Si python-docx no vio la X porque está flotando, la buscamos a la fuerza.
-    # ====================================================================
+    # D) LECTURA XML DIRECTA (Cuadros de texto invisibles)
     if not tipo_mantenimiento:
         import zipfile
         try:
             with zipfile.ZipFile(file_path, 'r') as docx_zip:
                 xml_content = docx_zip.read('word/document.xml').decode('utf-8').upper()
-                raw_text = re.sub(r'<[^>]+>', '', xml_content) # Borra todo el código XML
-                raw_text_clean = re.sub(r'\s+', '', raw_text) # Borra los espacios
+                raw_text = re.sub(r'<[^>]+>', '', xml_content)
+                raw_text_clean = re.sub(r'\s+', '', raw_text)
                 
                 if "XTIPOII" in raw_text_clean or "X-TIPOII" in raw_text_clean: tipo_mantenimiento = "EXTERNO"
                 elif "XTIPOI" in raw_text_clean or "X-TIPOI" in raw_text_clean: tipo_mantenimiento = "INTERNO"
@@ -280,12 +297,13 @@ async def procesar_word_auto(word: UploadFile = File(...)):
             
     if area: datos_finales["area"] = area.upper()
     if tipo_mantenimiento: datos_finales["tipo_mantenimiento"] = tipo_mantenimiento
+    if diagnostico_encontrado: datos_finales["diagnostico"] = diagnostico_encontrado
+    if nota_encontrada: datos_finales["nota"] = nota_encontrada
 
     if maquina_oficial and datos_finales.get("orden_trabajo"):
         return {"autodetectado": True, "codigoDetectado": maquina_oficial, "data": datos_finales}
     else:
         return {"autodetectado": False, "codigoDetectado": maquina_oficial or "", "data": datos_finales}
-
 
 
 @app.post("/api/consultar-maquina")
@@ -318,13 +336,24 @@ async def generar_ficha(
         shutil.copyfileobj(file.file, buffer)
 
     # =================================================================
-    # FASE A: EXTRAER TAREAS
+    # FASE A: EXTRAER TAREAS, DIAGNÓSTICO Y NOTA
     # =================================================================
     doc_origen = docx.Document(file_path)
     tareas_extraidas = []
+    diagnostico_extraido = ""
+    nota_extraida = ""
     
+    # 1. Escaneo en Tablas para buscar el Diagnóstico y Operaciones
     for table in doc_origen.tables:
         text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
+        
+        for row in table.rows:
+            if len(row.cells) >= 2:
+                c0_norm = normalizar_texto(row.cells[0].text)
+                c1_text = row.cells[1].text.strip()
+                if "DIAGNOSTICO" in c0_norm and c1_text and not diagnostico_extraido:
+                    diagnostico_extraido = c1_text.upper()
+
         if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
             continue
             
@@ -338,12 +367,24 @@ async def generar_ficha(
                 if len(t_tarea) > 3 and t_norm not in titulos_basura:
                     tareas_extraidas.append((t_tarea, t_estado))
 
-    nota_final = nota.strip().upper()
-    if not nota_final:
-        for p in doc_origen.paragraphs:
-            if "NOTA:" in p.text.upper() or "NOTA :" in p.text.upper():
-                nota_final = re.sub(r'(?i)NOTA\s*:\s*', '', p.text).strip().upper()
-                break
+    # 2. Escaneo en Párrafos para Diagnóstico y Nota Adicional
+    for p in doc_origen.paragraphs:
+        p_text = p.text.strip()
+        p_norm = normalizar_texto(p_text)
+        
+        if not diagnostico_extraido and "DIAGNOSTICO" in p_norm:
+            if ":" in p_text:
+                diagnostico_extraido = p_text.split(":", 1)[1].strip().upper()
+        
+        if "NOTA" in p_norm:
+            if ":" in p_text:
+                nota_extraida = p_text.split(":", 1)[1].strip().upper()
+            else:
+                nota_extraida = p_text.upper()
+
+    # Definir valores finales priorizando el formulario web, y respaldando con lo extraído del Word
+    diagnostico_final = diagnostico.strip().upper() if diagnostico.strip() else diagnostico_extraido
+    nota_final = nota.strip().upper() if nota.strip() else nota_extraida
 
     # =================================================================
     # FASE B: CONSTRUCCIÓN MILIMÉTRICA
@@ -381,7 +422,6 @@ async def generar_ficha(
     doc.add_paragraph() # Espacio separador antes de la primera tabla
 
     # --- FUNCIÓN MAESTRA PARA TABLAS (Calibri 11) ---
-# --- FUNCIÓN MAESTRA PARA TABLAS (Calibri 11) ---
     def crear_bloque_tabla(datos):
         table = doc.add_table(rows=len(datos), cols=2)
         table.style = 'Table Grid'
@@ -397,21 +437,46 @@ async def generar_ficha(
             r0.font.size = Pt(11)
             r0.bold = True
             
-            # ---> NUEVO: PINTAR EL FONDO DE GRIS (Columna 1) <---
+            # PINTAR EL FONDO DE GRIS (Columna 1)
             tcPr0 = cells[0]._element.get_or_add_tcPr()
             shd0 = OxmlElement('w:shd')
             shd0.set(qn('w:val'), 'clear')
             shd0.set(qn('w:color'), 'auto')
-            shd0.set(qn('w:fill'), 'F2F2F2') # Código Hexadecimal del Gris
+            shd0.set(qn('w:fill'), 'F2F2F2')
             tcPr0.append(shd0)
             
-            # Celda Derecha (Valor) - Normal, Izquierda
+            # Celda Derecha (Valor) - Con soporte para poner la X en negrita
             cells[1].text = ""
             p1 = cells[1].paragraphs[0]
             p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            r1 = p1.add_run(valor)
-            r1.font.name = 'Calibri'
-            r1.font.size = Pt(11)
+            
+            # Separar por líneas (por si hay saltos de línea como en Tipo de Ejecución)
+            lineas = str(valor).split('\n')
+            for idx_l, linea in enumerate(lineas):
+                if idx_l > 0:
+                    p1.add_run("\n")
+                
+                # Si la línea contiene la marca [ X ], aplicamos negrita solo a la X
+                if "[ X ]" in linea:
+                    partes = linea.split("[ X ]")
+                    
+                    r_antes = p1.add_run(partes[0] + "[ ")
+                    r_antes.font.name = 'Calibri'
+                    r_antes.font.size = Pt(11)
+                    
+                    r_x = p1.add_run("X")
+                    r_x.font.name = 'Calibri'
+                    r_x.font.size = Pt(11)
+                    r_x.bold = True  # <--- Aquí va la X en negrita
+                    
+                    r_despues = p1.add_run(" ]" + partes[1])
+                    r_despues.font.name = 'Calibri'
+                    r_despues.font.size = Pt(11)
+                else:
+                    # Texto normal si no lleva X marcada
+                    r_norm = p1.add_run(linea)
+                    r_norm.font.name = 'Calibri'
+                    r_norm.font.size = Pt(11)
             
             # Ajuste perfecto con el "ancho preferido" de tu plantilla
             cells[0].width = Cm(6.24)
@@ -423,9 +488,7 @@ async def generar_ficha(
                 tcVAlign.set(qn('w:val'), 'center')
                 c._element.tcPr.append(tcVAlign)
         
-# ... (código del centrado vertical) ...
-        
-        # ---> NUEVO: Espacio real de tamaño 4 (sin márgenes ocultos) <---
+        # Espacio real de tamaño 4 (sin márgenes ocultos)
         p_espacio = doc.add_paragraph()
         p_espacio.paragraph_format.space_after = Pt(0)
         p_espacio.add_run().font.size = Pt(4)
@@ -459,7 +522,7 @@ async def generar_ficha(
     ])
 
     crear_bloque_tabla([
-        ("DIAGNÓSTICO DE FALLA:", diagnostico.upper())
+        ("DIAGNÓSTICO DE FALLA:", diagnostico_final)
     ])
 
     # 4. TABLA DE OPERACIONES (Fondo Gris)
