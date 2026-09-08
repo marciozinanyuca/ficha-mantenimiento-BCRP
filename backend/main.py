@@ -375,6 +375,7 @@ async def generar_ficha(
     doc_origen = docx.Document(file_path)
     tareas_mecanicas = []
     tareas_electricas = []
+    tareas_mixtas = []  # <--- NUEVA LISTA PARA LA TERCERA OPCIÓN
     categoria_actual = "MECANICO"
     diagnostico_extraido = ""
     nota_extraida = ""
@@ -386,10 +387,12 @@ async def generar_ficha(
             p_text = p.text.strip()
             p_norm = normalizar_texto(p_text)
             
-            # Detectar cambios de categoría
-            if "ELECTRICO" in p_norm or "ELÉCTRICO" in p_norm:
+            # ---> NUEVO: Detectar si están ambas palabras juntas <---
+            if "ELECTRICO" in p_norm and "MECANICO" in p_norm:
+                categoria_actual = "MIXTO"
+            elif "ELECTRICO" in p_norm:
                 categoria_actual = "ELECTRICO"
-            elif "MECANICO" in p_norm or "MECÁNICO" in p_norm:
+            elif "MECANICO" in p_norm:
                 categoria_actual = "MECANICO"
                 
             # Extraer Diagnóstico y Nota si están en párrafos
@@ -429,9 +432,14 @@ async def generar_ficha(
                     t_estado = row.cells[-1].text.strip()
                     t_norm = normalizar_texto(t_tarea)
                     
-                    titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:"]
+                    # Agregamos variaciones mixtas a los títulos basura
+                    titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:", "ELECTRICO MECANICO", "ELECTRICO - MECANICO:"]
+                    
                     if len(t_tarea) > 3 and t_norm not in titulos_basura:
-                        if categoria_actual == "ELECTRICO":
+                        # ---> NUEVO: Enviar las tareas a la lista correspondiente <---
+                        if categoria_actual == "MIXTO":
+                            tareas_mixtas.append((t_tarea, t_estado))
+                        elif categoria_actual == "ELECTRICO":
                             tareas_electricas.append((t_tarea, t_estado))
                         else:
                             tareas_mecanicas.append((t_tarea, t_estado))
@@ -660,6 +668,7 @@ async def generar_ficha(
     # Construir las tablas de forma independiente (Enviamos el texto sin los dos puntos)
     construir_tabla_categoria("MECÁNICO", tareas_mecanicas)
     construir_tabla_categoria("ELÉCTRICO", tareas_electricas)
+    construir_tabla_categoria("ELÉCTRICO - MECÁNICO", tareas_mixtas)
 
     # 5. NOTA FINAL (Calibri 11)
     p_nota = doc.add_paragraph()
