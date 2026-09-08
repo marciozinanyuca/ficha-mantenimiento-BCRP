@@ -8,6 +8,7 @@ import shutil
 import os
 import re
 import docx
+import difflib
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
@@ -62,7 +63,7 @@ def obtener_maquinas_excel():
     return list(dict.fromkeys(maquinas))
 
 def coincidencia_inteligente(hint, lista_maquinas):
-    """Cruza un texto cualquiera (ej. nombre de archivo) con el catálogo del Excel"""
+    """Cruza un texto cualquiera con el catálogo del Excel usando IA difusa"""
     hint_norm = normalizar_texto(hint)
     if not hint_norm: return None
     
@@ -70,16 +71,49 @@ def coincidencia_inteligente(hint, lista_maquinas):
     for maq in lista_maquinas:
         if normalizar_texto(maq) == hint_norm: return maq
         
-    # 2. Si el nombre de la máquina del Excel ESTÁ DENTRO del hint (Ej: Nombre de archivo)
+    # 2. Si la máquina del Excel ESTÁ DENTRO del texto (Substring exacto)
     for maq in lista_maquinas:
         maq_norm = normalizar_texto(maq)
         if maq_norm and maq_norm in hint_norm: return maq
         
-    # 3. Si el hint ESTÁ DENTRO de la máquina del Excel
+    # 3. Si el texto ESTÁ DENTRO de la máquina del Excel
     for maq in lista_maquinas:
         maq_norm = normalizar_texto(maq)
         if maq_norm and hint_norm in maq_norm: return maq
         
+    # 4. Búsqueda por intersección de palabras (Ideal para códigos extra o desordenados)
+    # Limpiamos los paréntesis para comparar puras palabras sueltas
+    hint_words = set(re.sub(r'[\(\)]', ' ', hint_norm).split())
+    mejor_maq = None
+    max_score = 0
+    
+    for maq in lista_maquinas:
+        maq_norm = normalizar_texto(maq)
+        maq_words = set(re.sub(r'[\(\)]', ' ', maq_norm).split())
+        
+        interseccion = hint_words.intersection(maq_words)
+        
+        # Si comparten al menos 2 palabras clave (ej. "APILADOR" y "ELECTRICO")
+        if len(interseccion) >= 2:
+            # Calculamos qué porcentaje de la máquina del Excel está en el texto
+            score = len(interseccion) / max(len(maq_words), 1)
+            
+            # Si acierta al menos el 60% de las palabras y es el mejor hasta ahora
+            if score > max_score and score >= 0.6:
+                max_score = score
+                mejor_maq = maq
+                
+    if mejor_maq:
+        return mejor_maq
+        
+    # 5. Similitud difusa (Fuzzy Match) para errores de tipeo menores
+    opciones_norm = [normalizar_texto(m) for m in lista_maquinas]
+    matches = difflib.get_close_matches(hint_norm, opciones_norm, n=1, cutoff=0.7)
+    if matches:
+        match_str = matches[0]
+        for maq in lista_maquinas:
+            if normalizar_texto(maq) == match_str: return maq
+            
     return hint # Si falla todo, devuelve el texto original
 
 def buscar_datos_excel(codigo_buscado):
@@ -300,10 +334,10 @@ async def procesar_word_auto(word: UploadFile = File(...)):
     if diagnostico_encontrado: datos_finales["diagnostico"] = diagnostico_encontrado
     if nota_encontrada: datos_finales["nota"] = nota_encontrada
 
-    if maquina_oficial and datos_finales.get("orden_trabajo"):
+    if maquina_oficial:
         return {"autodetectado": True, "codigoDetectado": maquina_oficial, "data": datos_finales}
     else:
-        return {"autodetectado": False, "codigoDetectado": maquina_oficial or "", "data": datos_finales}
+        return {"autodetectado": False, "codigoDetectado": "", "data": datos_finales}
 
 
 @app.post("/api/consultar-maquina")
@@ -336,53 +370,72 @@ async def generar_ficha(
         shutil.copyfileobj(file.file, buffer)
 
     # =================================================================
-    # FASE A: EXTRAER TAREAS, DIAGNÓSTICO Y NOTA
+    # FASE A: EXTRAER TAREAS POR CATEGORÍA, DIAGNÓSTICO Y NOTA
     # =================================================================
     doc_origen = docx.Document(file_path)
-    tareas_extraidas = []
+    tareas_mecanicas = []
+    tareas_electricas = []
+    categoria_actual = "MECANICO"
     diagnostico_extraido = ""
     nota_extraida = ""
     
-    # 1. Escaneo en Tablas para buscar el Diagnóstico y Operaciones
-    for table in doc_origen.tables:
-        text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
-        
-        for row in table.rows:
-            if len(row.cells) >= 2:
-                c0_norm = normalizar_texto(row.cells[0].text)
-                c1_text = row.cells[1].text.strip()
-                if "DIAGNOSTICO" in c0_norm and c1_text and not diagnostico_extraido:
-                    diagnostico_extraido = c1_text.upper()
-
-        if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
-            continue
+    # Recorrido secuencial por el cuerpo del documento para respetar el orden de secciones
+    for element in doc_origen.element.body:
+        if element.tag.endswith('p'):
+            p = docx.text.paragraph.Paragraph(element, doc_origen)
+            p_text = p.text.strip()
+            p_norm = normalizar_texto(p_text)
             
-        for row in table.rows:
-            if len(row.cells) >= 2:
-                t_tarea = row.cells[0].text.strip()
-                t_estado = row.cells[-1].text.strip()
-                t_norm = normalizar_texto(t_tarea)
+            # Detectar cambios de categoría
+            if "ELECTRICO" in p_norm or "ELÉCTRICO" in p_norm:
+                categoria_actual = "ELECTRICO"
+            elif "MECANICO" in p_norm or "MECÁNICO" in p_norm:
+                categoria_actual = "MECANICO"
                 
-                titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:"]
-                if len(t_tarea) > 3 and t_norm not in titulos_basura:
-                    tareas_extraidas.append((t_tarea, t_estado))
+            # Extraer Diagnóstico y Nota si están en párrafos
+            if not diagnostico_extraido and "DIAGNOSTICO" in p_norm:
+                if ":" in p_text:
+                    val = p_text.split(":", 1)[1].strip()
+                else:
+                    val = p_text
+                texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', val, flags=re.IGNORECASE)
+                diagnostico_extraido = texto_limpio.strip().upper()
+            
+            if "NOTA" in p_norm:
+                if ":" in p_text:
+                    nota_extraida = p_text.split(":", 1)[1].strip().upper()
+                else:
+                    nota_extraida = p_text.upper()
+                    
+        elif element.tag.endswith('tbl'):
+            table = docx.table.Table(element, doc_origen)
+            text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
+            
+            # Revisar si hay diagnóstico oculto en celdas de tablas
+            for row in table.rows:
+                if len(row.cells) >= 2:
+                    c0_norm = normalizar_texto(row.cells[0].text)
+                    c1_text = row.cells[1].text.strip()
+                    if "DIAGNOSTICO" in c0_norm and c1_text and not diagnostico_extraido:
+                        texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', c1_text, flags=re.IGNORECASE)
+                        diagnostico_extraido = texto_limpio.strip().upper()
 
-    # 2. Escaneo en Párrafos para Diagnóstico y Nota Adicional
-    for p in doc_origen.paragraphs:
-        p_text = p.text.strip()
-        p_norm = normalizar_texto(p_text)
-        
-        if not diagnostico_extraido and "DIAGNOSTICO" in p_norm:
-            if ":" in p_text:
-                diagnostico_extraido = p_text.split(":", 1)[1].strip().upper()
-        
-        if "NOTA" in p_norm:
-            if ":" in p_text:
-                nota_extraida = p_text.split(":", 1)[1].strip().upper()
-            else:
-                nota_extraida = p_text.upper()
+            if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
+                continue
+                
+            for row in table.rows:
+                if len(row.cells) >= 2:
+                    t_tarea = row.cells[0].text.strip()
+                    t_estado = row.cells[-1].text.strip()
+                    t_norm = normalizar_texto(t_tarea)
+                    
+                    titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:"]
+                    if len(t_tarea) > 3 and t_norm not in titulos_basura:
+                        if categoria_actual == "ELECTRICO":
+                            tareas_electricas.append((t_tarea, t_estado))
+                        else:
+                            tareas_mecanicas.append((t_tarea, t_estado))
 
-    # Definir valores finales priorizando el formulario web, y respaldando con lo extraído del Word
     diagnostico_final = diagnostico.strip().upper() if diagnostico.strip() else diagnostico_extraido
     nota_final = nota.strip().upper() if nota.strip() else nota_extraida
 
@@ -525,23 +578,28 @@ async def generar_ficha(
         ("DIAGNÓSTICO DE FALLA:", diagnostico_final)
     ])
 
-    # 4. TABLA DE OPERACIONES (Fondo Gris)
-    if tareas_extraidas:
+    # 4. TABLAS DE OPERACIONES (Mecánico y Eléctrico)
+
+    def construir_tabla_categoria(titulo_cat, lista_tareas):
+        if not lista_tareas:
+            return
+            
+        # (Eliminamos la creación del subtítulo suelto para ponerlo en la tabla)
+
         table_ops = doc.add_table(rows=1, cols=2)
         table_ops.style = 'Table Grid'
         
         table_ops.rows[0].height = Cm(0.34)
         table_ops.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         
-        # Configurar Encabezados
         hdr_cells = table_ops.rows[0].cells
-        titulos_encabezado = ['OPERACIÓN', 'EJECUCIÓN']
+        
+        # ---> NUEVO: Combinamos "OPERACIÓN" con la categoría (Ej: OPERACIÓN - MECÁNICO) <---
+        titulos_encabezado = [f'OPERACIÓN - {titulo_cat}', 'EJECUCIÓN']
         
         for i, cell in enumerate(hdr_cells):
             cell.text = ""
             p = cell.paragraphs[0]
-            
-            # Ambos encabezados centrados horizontalmente
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
             r = p.add_run(titulos_encabezado[i])
@@ -549,7 +607,6 @@ async def generar_ficha(
             r.font.size = Pt(11)
             r.bold = True
             
-            # Pintar de gris sutil
             tcPr = cell._element.get_or_add_tcPr()
             shd = OxmlElement('w:shd')
             shd.set(qn('w:val'), 'clear')
@@ -557,22 +614,19 @@ async def generar_ficha(
             shd.set(qn('w:fill'), 'D9D9D9')
             tcPr.append(shd)
             
-            # Alinear verticalmente al centro la fila de encabezados
             tcVAlign = OxmlElement('w:vAlign')
             tcVAlign.set(qn('w:val'), 'center')
             tcPr.append(tcVAlign)
             
             cell.width = Cm(13.74) if i == 0 else Cm(0.92)
 
-        # Rellenar Filas de Operaciones
-        for tarea, estado in tareas_extraidas:
+        for tarea, estado in lista_tareas:
             nueva_fila = table_ops.add_row()
             nueva_fila.height = Cm(0.62)
             nueva_fila.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
             row_cells = nueva_fila.cells
             
-            # Columna 1: Tarea (Izquierda y alineado verticalmente al centro)
             row_cells[0].text = ""
             p0 = row_cells[0].paragraphs[0]
             p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -586,10 +640,9 @@ async def generar_ficha(
             tcVAlign0.set(qn('w:val'), 'center')
             tcPr0.append(tcVAlign0)
             
-            # Columna 2: Ejecución / OK (CENTRADO HORIZONTAL Y VERTICAL)
             row_cells[1].text = ""
             p1 = row_cells[1].paragraphs[0]
-            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER  # <-- ¡Aquí está el cambio clave!
+            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
             r1 = p1.add_run(estado)
             r1.font.name = 'Calibri'
             r1.font.size = Pt(11)
@@ -597,13 +650,16 @@ async def generar_ficha(
             
             tcPr1 = row_cells[1]._element.get_or_add_tcPr()
             tcVAlign1 = OxmlElement('w:vAlign')
-            tcVAlign1.set(qn('w:val'), 'center')  # Vertical al centro
+            tcVAlign1.set(qn('w:val'), 'center')
             tcPr1.append(tcVAlign1)
 
-        # Espacio real de tamaño 4
         p_espacio_ops = doc.add_paragraph()
         p_espacio_ops.paragraph_format.space_after = Pt(0)
         p_espacio_ops.add_run().font.size = Pt(4)
+
+    # Construir las tablas de forma independiente (Enviamos el texto sin los dos puntos)
+    construir_tabla_categoria("MECÁNICO", tareas_mecanicas)
+    construir_tabla_categoria("ELÉCTRICO", tareas_electricas)
 
     # 5. NOTA FINAL (Calibri 11)
     p_nota = doc.add_paragraph()
