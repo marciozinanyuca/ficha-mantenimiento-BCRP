@@ -331,8 +331,10 @@ async def procesar_word_auto(word: UploadFile = File(...)):
             
     if area: datos_finales["area"] = area.upper()
     if tipo_mantenimiento: datos_finales["tipo_mantenimiento"] = tipo_mantenimiento
-    if diagnostico_encontrado: datos_finales["diagnostico"] = diagnostico_encontrado
-    if nota_encontrada: datos_finales["nota"] = nota_encontrada
+    
+    # ---> CORRECCIÓN: Siempre enviamos diagnóstico y nota para forzar la limpieza en el frontend <---
+    datos_finales["diagnostico"] = diagnostico_encontrado
+    datos_finales["nota"] = nota_encontrada
 
     if maquina_oficial:
         return {"autodetectado": True, "codigoDetectado": maquina_oficial, "data": datos_finales}
