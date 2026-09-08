@@ -1,12 +1,17 @@
 import uvicorn
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 import pandas as pd
 import unicodedata
 import shutil
 import os
 import re
 import docx
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Cm, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 app = FastAPI(title="API Fichas de Mantenimiento BCRP")
 
@@ -280,7 +285,7 @@ async def procesar_word_auto(word: UploadFile = File(...)):
     else:
         return {"autodetectado": False, "codigoDetectado": maquina_oficial or "", "data": datos_finales}
 
-        
+
 
 @app.post("/api/consultar-maquina")
 async def consultar_maquina(data: dict):
@@ -290,9 +295,242 @@ async def consultar_maquina(data: dict):
     else: raise HTTPException(status_code=404, detail="Máquina no encontrada.")
 
 
+# --- 4. RUTA FINAL: GENERACIÓN DE DOCUMENTO DESDE CERO ---
 @app.post("/api/generar-ficha")
-async def generar_ficha():
-    pass
+async def generar_ficha(
+    file: UploadFile = File(...),
+    codigo: str = Form(""),
+    orden_trabajo: str = Form(""),
+    tecnico1: str = Form(""),
+    tecnico2: str = Form(""),
+    tecnico3: str = Form(""),
+    tecnico4: str = Form(""),
+    fecha: str = Form(""),
+    horas: str = Form(""),
+    diagnostico: str = Form(""),
+    tipo_mantenimiento: str = Form(""),
+    nota: str = Form(""),
+    area: str = Form("")
+):
+    file_path = os.path.join(UPLOAD_DIR, "generacion_temp.docx")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # =================================================================
+    # FASE A: EXTRAER TAREAS
+    # =================================================================
+    doc_origen = docx.Document(file_path)
+    tareas_extraidas = []
+    
+    for table in doc_origen.tables:
+        text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
+        if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
+            continue
+            
+        for row in table.rows:
+            if len(row.cells) >= 2:
+                t_tarea = row.cells[0].text.strip()
+                t_estado = row.cells[-1].text.strip()
+                t_norm = normalizar_texto(t_tarea)
+                
+                titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:"]
+                if len(t_tarea) > 3 and t_norm not in titulos_basura:
+                    tareas_extraidas.append((t_tarea, t_estado))
+
+    nota_final = nota.strip().upper()
+    if not nota_final:
+        for p in doc_origen.paragraphs:
+            if "NOTA:" in p.text.upper() or "NOTA :" in p.text.upper():
+                nota_final = re.sub(r'(?i)NOTA\s*:\s*', '', p.text).strip().upper()
+                break
+
+    # =================================================================
+    # FASE B: CONSTRUCCIÓN MILIMÉTRICA
+    # =================================================================
+    doc = docx.Document()
+    
+    # 1. Configurar Márgenes Exactos
+    for section in doc.sections:
+        section.top_margin = Cm(1.2)
+        section.bottom_margin = Cm(2.54)
+        section.left_margin = Cm(3.17)
+        section.right_margin = Cm(3.17)
+        # Ancho utilizable de página = 21cm - 3.17cm - 3.17cm = 14.66cm
+
+    # 2. TÍTULOS CENTRALES
+    p_titulo = doc.add_paragraph()
+    p_titulo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Primer texto: Institución (Tamaño 18)
+    run_bcrp = p_titulo.add_run("BANCO CENTRAL DE RESERVA DEL PERÚ\n")
+    run_bcrp.font.name = 'Arial'
+    run_bcrp.font.size = Pt(18)
+    run_bcrp.bold = False
+    
+    # El espacio intermedio: Salto de línea (Tamaño 11)
+    run_espacio = p_titulo.add_run("\n") 
+    run_espacio.font.size = Pt(11)
+    
+    # Segundo texto: Subtítulo (Tamaño 14)
+    run_ficha = p_titulo.add_run("FICHA DE MANTENIMIENTO")
+    run_ficha.font.name = 'Arial'
+    run_ficha.font.size = Pt(14)
+    run_ficha.bold = True
+    
+    doc.add_paragraph() # Espacio separador antes de la primera tabla
+
+    # --- FUNCIÓN MAESTRA PARA TABLAS (Calibri 11) ---
+# --- FUNCIÓN MAESTRA PARA TABLAS (Calibri 11) ---
+    def crear_bloque_tabla(datos):
+        table = doc.add_table(rows=len(datos), cols=2)
+        table.style = 'Table Grid'
+        for i, (label, valor) in enumerate(datos):
+            cells = table.rows[i].cells
+            
+            # Celda Izquierda (Etiqueta) - Negrita, Izquierda
+            cells[0].text = ""
+            p0 = cells[0].paragraphs[0]
+            p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r0 = p0.add_run(label)
+            r0.font.name = 'Calibri'
+            r0.font.size = Pt(11)
+            r0.bold = True
+            
+            # ---> NUEVO: PINTAR EL FONDO DE GRIS (Columna 1) <---
+            tcPr0 = cells[0]._element.get_or_add_tcPr()
+            shd0 = OxmlElement('w:shd')
+            shd0.set(qn('w:val'), 'clear')
+            shd0.set(qn('w:color'), 'auto')
+            shd0.set(qn('w:fill'), 'F2F2F2') # Código Hexadecimal del Gris
+            tcPr0.append(shd0)
+            
+            # Celda Derecha (Valor) - Normal, Izquierda
+            cells[1].text = ""
+            p1 = cells[1].paragraphs[0]
+            p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r1 = p1.add_run(valor)
+            r1.font.name = 'Calibri'
+            r1.font.size = Pt(11)
+            
+            # Ajuste perfecto con el "ancho preferido" de tu plantilla
+            cells[0].width = Cm(6.24)
+            cells[1].width = Cm(8.42)
+            
+            # Centrado vertical de la celda
+            for c in cells:
+                tcVAlign = OxmlElement('w:vAlign')
+                tcVAlign.set(qn('w:val'), 'center')
+                c._element.tcPr.append(tcVAlign)
+        
+        doc.add_paragraph() # Espacio entre tablas
+        return table
+
+    # 3. CONSTRUIR LOS 4 BLOQUES DE CABECERA
+    crear_bloque_tabla([
+        ("CÓDIGO DE LA MÁQUINA O EQUIPO", codigo.upper()),
+        ("ORDEN DE TRABAJO (OT):", orden_trabajo.upper()),
+        ("ÁREA:", area.upper())
+    ])
+
+    check_interno = "[ X ]" if tipo_mantenimiento == "INTERNO" else "[   ]"
+    check_externo = "[ X ]" if tipo_mantenimiento == "EXTERNO" else "[   ]"
+    texto_ejecucion = f"{check_interno} TIPO I - INTERNO\n{check_externo} TIPO II - EXTERNO"
+    
+    crear_bloque_tabla([
+        ("TIPO DE MANTENIMIENTO:", "PREVENTIVO PROGRAMADO"),
+        ("TIPO DE EJECUCIÓN:", texto_ejecucion),
+        ("SERVICIO:", "MECÁNICO") 
+    ])
+
+    tecnicos_lista = [t.upper() for t in [tecnico1, tecnico2, tecnico3, tecnico4] if t]
+    tecnicos_unidos = "\n".join(tecnicos_lista)
+    
+    crear_bloque_tabla([
+        ("FECHA DE EJECUCIÓN:", fecha.upper()),
+        ("HORAS REALES UTILIZADAS:", str(horas)),
+        ("TÉCNICO RESPONSABLE:", tecnicos_unidos)
+    ])
+
+    crear_bloque_tabla([
+        ("DIAGNÓSTICO DE FALLA:", diagnostico.upper())
+    ])
+
+    # 4. TABLA DE OPERACIONES (Fondo Gris)
+    if tareas_extraidas:
+        table_ops = doc.add_table(rows=1, cols=2)
+        table_ops.style = 'Table Grid'
+        
+        # Configurar Encabezados
+        hdr_cells = table_ops.rows[0].cells
+        titulos_encabezado = ['OPERACIÓN', 'EJECUCIÓN']
+        
+        for i, cell in enumerate(hdr_cells):
+            cell.text = ""
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(titulos_encabezado[i])
+            r.font.name = 'Calibri'
+            r.font.size = Pt(11)
+            r.bold = True
+            
+            # Pintar de gris
+            tcPr = cell._element.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:val'), 'clear')
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:fill'), 'D9D9D9')
+            tcPr.append(shd)
+            
+            cell.width = Cm(13.74) if i == 0 else Cm(1.49)
+
+        # Rellenar Filas de Operaciones
+        for tarea, estado in tareas_extraidas:
+            row_cells = table_ops.add_row().cells
+            
+            # Tarea (Izquierda)
+            row_cells[0].text = ""
+            p0 = row_cells[0].paragraphs[0]
+            p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            r0 = p0.add_run(tarea)
+            r0.font.name = 'Calibri'
+            r0.font.size = Pt(11)
+            row_cells[0].width = Cm(12.66)
+            
+            # Estado/OK (Centrado)
+            row_cells[1].text = ""
+            p1 = row_cells[1].paragraphs[0]
+            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r1 = p1.add_run(estado)
+            r1.font.name = 'Calibri'
+            r1.font.size = Pt(11)
+            row_cells[1].width = Cm(2.0)
+
+        doc.add_paragraph()
+
+    # 5. NOTA FINAL (Calibri 11)
+    p_nota = doc.add_paragraph()
+    p_nota.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    run_nota_label = p_nota.add_run("NOTA: ")
+    run_nota_label.font.name = 'Calibri'
+    run_nota_label.font.size = Pt(11)
+    run_nota_label.bold = True
+    
+    run_nota_texto = p_nota.add_run(nota_final)
+    run_nota_texto.font.name = 'Calibri'
+    run_nota_texto.font.size = Pt(11)
+
+    # =================================================================
+    # FASE C: EXPORTACIÓN
+    # =================================================================
+    nombre_archivo = f"{orden_trabajo}_{codigo}.docx".replace(" ", "_").replace("/", "-")
+    output_path = os.path.join(UPLOAD_DIR, nombre_archivo)
+    doc.save(output_path)
+    
+    return FileResponse(
+        output_path, 
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=nombre_archivo
+    )
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
