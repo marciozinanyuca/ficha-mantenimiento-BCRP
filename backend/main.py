@@ -414,7 +414,7 @@ async def generar_ficha(
             
             # Ajuste perfecto con el "ancho preferido" de tu plantilla
             cells[0].width = Cm(6.24)
-            cells[1].width = Cm(8.42)
+            cells[1].width = Cm(9.45)
             
             # Centrado vertical de la celda
             for c in cells:
