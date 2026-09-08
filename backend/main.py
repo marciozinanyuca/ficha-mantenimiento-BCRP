@@ -12,6 +12,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_ROW_HEIGHT_RULE
 
 app = FastAPI(title="API Fichas de Mantenimiento BCRP")
 
@@ -422,7 +423,13 @@ async def generar_ficha(
                 tcVAlign.set(qn('w:val'), 'center')
                 c._element.tcPr.append(tcVAlign)
         
-        doc.add_paragraph() # Espacio entre tablas
+# ... (código del centrado vertical) ...
+        
+        # ---> NUEVO: Espacio real de tamaño 4 (sin márgenes ocultos) <---
+        p_espacio = doc.add_paragraph()
+        p_espacio.paragraph_format.space_after = Pt(0)
+        p_espacio.add_run().font.size = Pt(4)
+        
         return table
 
     # 3. CONSTRUIR LOS 4 BLOQUES DE CABECERA
@@ -460,6 +467,9 @@ async def generar_ficha(
         table_ops = doc.add_table(rows=1, cols=2)
         table_ops.style = 'Table Grid'
         
+        table_ops.rows[0].height = Cm(0.34)
+        table_ops.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        
         # Configurar Encabezados
         hdr_cells = table_ops.rows[0].cells
         titulos_encabezado = ['OPERACIÓN', 'EJECUCIÓN']
@@ -467,13 +477,16 @@ async def generar_ficha(
         for i, cell in enumerate(hdr_cells):
             cell.text = ""
             p = cell.paragraphs[0]
+            
+            # Ambos encabezados centrados horizontalmente
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
             r = p.add_run(titulos_encabezado[i])
             r.font.name = 'Calibri'
             r.font.size = Pt(11)
             r.bold = True
             
-            # Pintar de gris
+            # Pintar de gris sutil
             tcPr = cell._element.get_or_add_tcPr()
             shd = OxmlElement('w:shd')
             shd.set(qn('w:val'), 'clear')
@@ -481,31 +494,53 @@ async def generar_ficha(
             shd.set(qn('w:fill'), 'D9D9D9')
             tcPr.append(shd)
             
-            cell.width = Cm(13.74) if i == 0 else Cm(1.49)
+            # Alinear verticalmente al centro la fila de encabezados
+            tcVAlign = OxmlElement('w:vAlign')
+            tcVAlign.set(qn('w:val'), 'center')
+            tcPr.append(tcVAlign)
+            
+            cell.width = Cm(13.74) if i == 0 else Cm(0.92)
 
         # Rellenar Filas de Operaciones
         for tarea, estado in tareas_extraidas:
-            row_cells = table_ops.add_row().cells
+            nueva_fila = table_ops.add_row()
+            nueva_fila.height = Cm(0.62)
+            nueva_fila.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
             
-            # Tarea (Izquierda)
+            row_cells = nueva_fila.cells
+            
+            # Columna 1: Tarea (Izquierda y alineado verticalmente al centro)
             row_cells[0].text = ""
             p0 = row_cells[0].paragraphs[0]
             p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
             r0 = p0.add_run(tarea)
             r0.font.name = 'Calibri'
             r0.font.size = Pt(11)
-            row_cells[0].width = Cm(12.66)
+            row_cells[0].width = Cm(13.74)
             
-            # Estado/OK (Centrado)
+            tcPr0 = row_cells[0]._element.get_or_add_tcPr()
+            tcVAlign0 = OxmlElement('w:vAlign')
+            tcVAlign0.set(qn('w:val'), 'center')
+            tcPr0.append(tcVAlign0)
+            
+            # Columna 2: Ejecución / OK (CENTRADO HORIZONTAL Y VERTICAL)
             row_cells[1].text = ""
             p1 = row_cells[1].paragraphs[0]
-            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p1.alignment = WD_ALIGN_PARAGRAPH.CENTER  # <-- ¡Aquí está el cambio clave!
             r1 = p1.add_run(estado)
             r1.font.name = 'Calibri'
             r1.font.size = Pt(11)
-            row_cells[1].width = Cm(2.0)
+            row_cells[1].width = Cm(0.92)
+            
+            tcPr1 = row_cells[1]._element.get_or_add_tcPr()
+            tcVAlign1 = OxmlElement('w:vAlign')
+            tcVAlign1.set(qn('w:val'), 'center')  # Vertical al centro
+            tcPr1.append(tcVAlign1)
 
-        doc.add_paragraph()
+        # Espacio real de tamaño 4
+        p_espacio_ops = doc.add_paragraph()
+        p_espacio_ops.paragraph_format.space_after = Pt(0)
+        p_espacio_ops.add_run().font.size = Pt(4)
 
     # 5. NOTA FINAL (Calibri 11)
     p_nota = doc.add_paragraph()
