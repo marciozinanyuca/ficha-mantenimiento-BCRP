@@ -307,7 +307,7 @@ export default function Home() {
               : 'bg-amber-600/10 text-amber-700 border-amber-600/20'
               }`}>
               <span className={`w-1.5 h-1.5 rounded-full ${jsReady ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              {jsReady ? 'Sistema Operativo' : 'Sincronizando'}
+              {jsReady ? 'En Línea' : 'Sincronizando'}
             </span>
           </div>
         </div>
