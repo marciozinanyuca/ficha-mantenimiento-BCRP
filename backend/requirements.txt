@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-python-multipart
+python-docx
 pandas
 openpyxl
-python-docx
+python-multipart
+lxml
