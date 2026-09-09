@@ -273,53 +273,116 @@ async def procesar_word_auto(word: UploadFile = File(...)):
                 else:
                     nota_encontrada = p_text.upper()
 
-        # C) INTELIGENCIA EXTREMA PARA "TIPO DE MANTENIMIENTO"
-        texto_unido = "\n".join(texto_completo).upper()
-        texto_sin_espacios = re.sub(r'\s+', '', texto_unido)
+        # ====================================================================
+        # C) INTELIGENCIA EXTREMA PARA "TIPO DE MANTENIMIENTO" (SUPER CAZADOR)
+        # ====================================================================
         
-        if "[X]TIPOII" in texto_sin_espacios or "☒TIPOII" in texto_sin_espacios or "☑TIPOII" in texto_sin_espacios:
-            tipo_mantenimiento = "EXTERNO"
-        elif "[X]TIPOI" in texto_sin_espacios or "☒TIPOI" in texto_sin_espacios or "☑TIPOI" in texto_sin_espacios:
-            tipo_mantenimiento = "INTERNO"
-        else:
-            match_t1 = re.search(r'TIPO\s*I\b(?!I)', texto_unido)
-            match_t2 = re.search(r'TIPO\s*I{2}\b', texto_unido)
+        # --- 1. CAZADOR DE TABLAS DIBUJADAS (EL SECRETO REVELADO) ---
+        # Detecta si las casillas son en realidad celdas de una pequeña tabla
+        try:
+            tablas_casilla = []
+            for table in doc.tables:
+                if len(table.rows) >= 2:
+                    for i in range(len(table.rows) - 1):
+                        f1_txt = "".join([c.text.upper() for c in table.rows[i].cells])
+                        f2_txt = "".join([c.text.upper() for c in table.rows[i+1].cells])
+                        
+                        f1 = re.sub(r'[^A-Z0-9]', '', f1_txt)
+                        f2 = re.sub(r'[^A-Z0-9]', '', f2_txt)
+                        
+                        # Caso A: Tablita de 2 filas solo con la X y un vacío
+                        if f1 in ["X", ""] and f2 in ["X", ""] and (f1 or f2):
+                            if f2 == "X": tipo_mantenimiento = "EXTERNO"
+                            elif f1 == "X": tipo_mantenimiento = "INTERNO"
+                            
+                        # Caso B: Tabla que incluye los textos TIPO I y TIPO II
+                        elif "TIPOI" in f1 and "TIPOII" in f2:
+                            if "X" in f2: tipo_mantenimiento = "EXTERNO"
+                            elif "X" in f1: tipo_mantenimiento = "INTERNO"
+                
+                # Caso C: Tablitas sueltas de 1x1
+                texto_total = re.sub(r'[^A-Z0-9]', '', "".join([c.text.upper() for row in table.rows for c in row.cells]))
+                if len(texto_total) <= 1:
+                    tablas_casilla.append(texto_total)
             
-            pos_t1 = match_t1.start() if match_t1 else -1
-            pos_t2 = match_t2.start() if match_t2 else -1
+            # Si encontró dos tablitas sueltas (una para cada opción)
+            if not tipo_mantenimiento and len(tablas_casilla) >= 2:
+                if tablas_casilla[1] == "X" and tablas_casilla[0] == "": tipo_mantenimiento = "EXTERNO"
+                elif tablas_casilla[0] == "X" and tablas_casilla[1] == "": tipo_mantenimiento = "INTERNO"
+        except Exception:
+            pass
+
+        # --- 2. CAZADOR XML (CHECKBOXES NATIVOS Y WINGDINGS) ---
+        if not tipo_mantenimiento:
+            import zipfile
+            try:
+                with zipfile.ZipFile(file_path, 'r') as docx_zip:
+                    xml_content = docx_zip.read('word/document.xml').decode('utf-8').upper()
+                    
+                    checkboxes = []
+                    for m in re.finditer(r'<W:CHECKBOX(.*?)</W:CHECKBOX>', xml_content, flags=re.DOTALL):
+                        is_checked = '<W:CHECKED' in m.group(1) and '<W:VAL="0"' not in m.group(1) and '<W:VAL="FALSE"' not in m.group(1)
+                        checkboxes.append((m.start(), is_checked))
+                        
+                    for m in re.finditer(r'<W14:CHECKBOX(.*?)</W14:CHECKBOX>', xml_content, flags=re.DOTALL):
+                        is_checked = '<W14:CHECKED' in m.group(1) and '<W14:VAL="0"' not in m.group(1)
+                        checkboxes.append((m.start(), is_checked))
+                        
+                    for m in re.finditer(r'<W:SYM W:FONT="WINGDINGS" W:CHAR="([A-F0-9]+)"/>', xml_content):
+                        c_code = m.group(1)
+                        if c_code in ["FE", "FC", "FD", "FB", "58"]: checkboxes.append((m.start(), True))
+                        elif c_code in ["A8", "6F", "9F", "F0"]: checkboxes.append((m.start(), False))
+                            
+                    checkboxes.sort(key=lambda x: x[0])
+                    
+                    if len(checkboxes) >= 2:
+                        if checkboxes[1][1] and not checkboxes[0][1]: tipo_mantenimiento = "EXTERNO"
+                        elif checkboxes[0][1] and not checkboxes[1][1]: tipo_mantenimiento = "INTERNO"
+            except:
+                pass
+
+        # --- 3. RADAR DE TEXTO LINEAL (RED DE SEGURIDAD FINAL) ---
+        if not tipo_mantenimiento:
+            texto_lineal = []
+            for element in doc.element.body:
+                if element.tag.endswith('p'):
+                    texto_lineal.append(docx.text.paragraph.Paragraph(element, doc).text.strip())
+                elif element.tag.endswith('tbl'):
+                    table = docx.table.Table(element, doc)
+                    for row in table.rows:
+                        for cell in row.cells: texto_lineal.append(cell.text.strip())
+                            
+            texto_colapsado = re.sub(r'\s+', ' ', " | ".join([t for t in texto_lineal if t]).upper())
             
-            matches_x = list(re.finditer(r'(?:\bX\b|[☒☑✔])', texto_unido))
-            mejor_distancia = 200 
-            
-            for m in matches_x:
-                pos_x = m.start()
-                if pos_t1 != -1:
-                    dist1 = abs(pos_x - pos_t1)
-                    if dist1 < mejor_distancia:
-                        mejor_distancia = dist1; tipo_mantenimiento = "INTERNO"
-                if pos_t2 != -1:
-                    dist2 = abs(pos_x - pos_t2)
-                    if dist2 < mejor_distancia:
-                        mejor_distancia = dist2; tipo_mantenimiento = "EXTERNO"
+            if any(x in texto_colapsado.replace(" ", "") for x in ["[X]TIPOII", "☒TIPOII", "TIPOII-EXTERNO[X]", "TIPOIIX"]):
+                tipo_mantenimiento = "EXTERNO"
+            elif any(x in texto_colapsado.replace(" ", "") for x in ["[X]TIPOI", "☒TIPOI", "TIPOI-INTERNO[X]", "TIPOIX"]):
+                tipo_mantenimiento = "INTERNO"
+            else:
+                match_t1 = re.search(r'TIPO\s*I\b(?!I)', texto_colapsado)
+                match_t2 = re.search(r'TIPO\s*I{2}\b', texto_colapsado)
+                
+                pt1_s = match_t1.start() if match_t1 else -1
+                pt1_e = match_t1.end() if match_t1 else -1
+                pt2_s = match_t2.start() if match_t2 else -1
+                pt2_e = match_t2.end() if match_t2 else -1
+                
+                matches_x = list(re.finditer(r'(?:\[\s*X\s*\]|\(\s*X\s*\)|\bX\b|[☒☑✔✗×])', texto_colapsado))
+                mejor_distancia = 300 
+                
+                for m in matches_x:
+                    x_s, x_e = m.start(), m.end()
+                    d1 = min(abs(x_s - pt1_e), abs(x_e - pt1_s)) if pt1_s != -1 else 9999
+                    d2 = min(abs(x_s - pt2_e), abs(x_e - pt2_s)) if pt2_s != -1 else 9999
+                    
+                    if min(d1, d2) < mejor_distancia:
+                        mejor_distancia = min(d1, d2)
+                        tipo_mantenimiento = "INTERNO" if d1 < d2 else "EXTERNO"
 
     except Exception:
         pass
 
-    # D) LECTURA XML DIRECTA (Cuadros de texto invisibles)
-    if not tipo_mantenimiento:
-        import zipfile
-        try:
-            with zipfile.ZipFile(file_path, 'r') as docx_zip:
-                xml_content = docx_zip.read('word/document.xml').decode('utf-8').upper()
-                raw_text = re.sub(r'<[^>]+>', '', xml_content)
-                raw_text_clean = re.sub(r'\s+', '', raw_text)
-                
-                if "XTIPOII" in raw_text_clean or "X-TIPOII" in raw_text_clean: tipo_mantenimiento = "EXTERNO"
-                elif "XTIPOI" in raw_text_clean or "X-TIPOI" in raw_text_clean: tipo_mantenimiento = "INTERNO"
-        except:
-            pass
-
-    # E) Cruzar datos finales
+    # D) Cruzar datos finales
     if not maquina_oficial and codigo_interno:
         codigo_interno = re.sub(r'\s+X$', '', codigo_interno, flags=re.IGNORECASE).strip()
         maquina_oficial = coincidencia_inteligente(codigo_interno, lista_maquinas)
