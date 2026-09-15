@@ -9,11 +9,14 @@ import os
 import re
 import docx
 import difflib
+import warnings
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ROW_HEIGHT_RULE
+
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 app = FastAPI(title="API Fichas de Mantenimiento BCRP")
 
@@ -125,6 +128,7 @@ def buscar_datos_excel(codigo_buscado):
 
     idx_maquina, idx_horas, idx_fecha = -1, -1, -1
     idx_t1, idx_t2, idx_t3, idx_t4 = -1, -1, -1, -1
+    idx_tipo_atencion = -1
     fila_enc = 0
     
     for r, row in df.head(25).iterrows():
@@ -137,6 +141,7 @@ def buscar_datos_excel(codigo_buscado):
             elif 'TECNICO 4' in c_norm and idx_t4 == -1: idx_t4 = c
             elif ('HORAS' in c_norm or 'REALES' in c_norm or 'H H' in c_norm) and idx_horas == -1: idx_horas = c
             elif ('TERMINO' in c_norm or 'FECHA' in c_norm) and idx_fecha == -1: idx_fecha = c
+            elif 'ATENCION' in c_norm and idx_tipo_atencion == -1: idx_tipo_atencion = c
 
     if idx_maquina == -1: idx_maquina = 1
     if idx_fecha == -1: idx_fecha = 17
@@ -184,9 +189,16 @@ def buscar_datos_excel(codigo_buscado):
     t1, t2, t3, t4 = limpiar_t(idx_t1), limpiar_t(idx_t2), limpiar_t(idx_t3), limpiar_t(idx_t4)
     datos_vacios = not orden_trabajo and not horas_str and not t1
 
+    tipo_atencion_str = ""
+    if idx_tipo_atencion != -1 and pd.notna(fila_encontrada.iloc[idx_tipo_atencion]):
+        val_atencion = str(fila_encontrada.iloc[idx_tipo_atencion]).strip().upper()
+        if "INTERNO" in val_atencion: tipo_atencion_str = "INTERNO"
+        elif "EXTERNO" in val_atencion: tipo_atencion_str = "EXTERNO"
+
     return {
         "orden_trabajo": orden_trabajo, "horas": horas_str, "fecha": fecha_str,
         "tecnico1": t1, "tecnico2": t2, "tecnico3": t3, "tecnico4": t4,
+        "tipo_mantenimiento": tipo_atencion_str,  # <--- SE AGREGA AQUÍ
         "alerta_vacio": datos_vacios
     }
 
@@ -277,6 +289,8 @@ async def procesar_word_auto(word: UploadFile = File(...)):
         # C) INTELIGENCIA EXTREMA PARA "TIPO DE MANTENIMIENTO" (SUPER CAZADOR)
         # ====================================================================
         
+
+        r'''
         # --- 1. CAZADOR DE TABLAS DIBUJADAS (EL SECRETO REVELADO) ---
         # Detecta si las casillas son en realidad celdas de una pequeña tabla
         try:
@@ -378,6 +392,7 @@ async def procesar_word_auto(word: UploadFile = File(...)):
                     if min(d1, d2) < mejor_distancia:
                         mejor_distancia = min(d1, d2)
                         tipo_mantenimiento = "INTERNO" if d1 < d2 else "EXTERNO"
+         '''
 
     except Exception:
         pass
@@ -390,12 +405,16 @@ async def procesar_word_auto(word: UploadFile = File(...)):
     datos_finales = {}
     if maquina_oficial:
         datos_excel = buscar_datos_excel(maquina_oficial)
-        if datos_excel: datos_finales = datos_excel
+        if datos_excel: 
+            datos_finales = datos_excel
+            # ---> NUEVO: Usar el tipo de mantenimiento que viene directo del Excel
+            if datos_excel.get("tipo_mantenimiento"):
+                tipo_mantenimiento = datos_excel["tipo_mantenimiento"]
             
     if area: datos_finales["area"] = area.upper()
     if tipo_mantenimiento: datos_finales["tipo_mantenimiento"] = tipo_mantenimiento
     
-    # ---> CORRECCIÓN: Siempre enviamos diagnóstico y nota para forzar la limpieza en el frontend <---
+    # Siempre enviamos diagnóstico y nota para forzar la limpieza en el frontend
     datos_finales["diagnostico"] = diagnostico_encontrado
     datos_finales["nota"] = nota_encontrada
 
