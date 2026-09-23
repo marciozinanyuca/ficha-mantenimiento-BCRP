@@ -279,11 +279,18 @@ async def procesar_word_auto(word: UploadFile = File(...)):
                 # Limpiar cualquier residuo de la etiqueta al inicio
                 texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', val, flags=re.IGNORECASE)
                 diagnostico_encontrado = texto_limpio.strip().upper()
-            if not nota_encontrada and "NOTA" in p_norm:
+            if "NOTA" in p_norm:
                 if ":" in p_text:
-                    nota_encontrada = p_text.split(":", 1)[1].strip().upper()
+                    val = p_text.split(":", 1)[1].strip().upper()
                 else:
-                    nota_encontrada = p_text.upper()
+                    val = p_text.upper()
+                # Limpiamos la palabra NOTA al inicio
+                texto_limpio = re.sub(r'^NOTA\s*[:\-]*\s*', '', val, flags=re.IGNORECASE).strip()
+                if texto_limpio:
+                    if nota_encontrada:
+                        nota_encontrada += "\n" + texto_limpio
+                    else:
+                        nota_encontrada = texto_limpio
 
         # ====================================================================
         # C) INTELIGENCIA EXTREMA PARA "TIPO DE MANTENIMIENTO" (SUPER CAZADOR)
@@ -459,46 +466,69 @@ async def generar_ficha(
     doc_origen = docx.Document(file_path)
     tareas_mecanicas = []
     tareas_electricas = []
-    tareas_mixtas = []  # <--- NUEVA LISTA PARA LA TERCERA OPCIÓN
+    tareas_mixtas = []
+    tareas_electronicas = []
+    tareas_neumaticas = []
+    repuestos_lista = []
     categoria_actual = "MECANICO"
+    orden_categorias = ["MECANICO"]  # <--- NUEVO: Memoria secuencial del documento original
     diagnostico_extraido = ""
     nota_extraida = ""
     
-    # Recorrido secuencial por el cuerpo del documento para respetar el orden de secciones
+    titulos_basura = [
+        "OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "ELECTRONICO", "NEUMATICO", 
+        "ELECTRICO MECANICO", "REPUESTOS"
+    ]
+    
     for element in doc_origen.element.body:
+        # --- ESCANEO DE PÁRRAFOS ---
         if element.tag.endswith('p'):
             p = docx.text.paragraph.Paragraph(element, doc_origen)
-            p_text = p.text.strip()
-            p_norm = normalizar_texto(p_text)
             
-            # ---> NUEVO: Detectar si están ambas palabras juntas <---
-            if "ELECTRICO" in p_norm and "MECANICO" in p_norm:
-                categoria_actual = "MIXTO"
-            elif "ELECTRICO" in p_norm:
-                categoria_actual = "ELECTRICO"
-            elif "MECANICO" in p_norm:
-                categoria_actual = "MECANICO"
+            for linea_raw in p.text.split('\n'):
+                p_text = linea_raw.strip()
+                p_norm = normalizar_texto(p_text)
                 
-            # Extraer Diagnóstico y Nota si están en párrafos
-            if not diagnostico_extraido and "DIAGNOSTICO" in p_norm:
-                if ":" in p_text:
-                    val = p_text.split(":", 1)[1].strip()
-                else:
-                    val = p_text
-                texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', val, flags=re.IGNORECASE)
-                diagnostico_extraido = texto_limpio.strip().upper()
-            
-            if "NOTA" in p_norm:
-                if ":" in p_text:
-                    nota_extraida = p_text.split(":", 1)[1].strip().upper()
-                else:
-                    nota_extraida = p_text.upper()
+                if not p_text: continue
+                
+                # 1. Detectar cambio de categoría y registrar el orden en la memoria
+                nueva_cat = None
+                if p_norm == "REPUESTOS": nueva_cat = "REPUESTOS"
+                elif p_norm == "ELECTRONICO": nueva_cat = "ELECTRONICO"
+                elif p_norm == "NEUMATICO": nueva_cat = "NEUMATICO"
+                elif p_norm == "ELECTRICO": nueva_cat = "ELECTRICO"
+                elif p_norm == "MECANICO": nueva_cat = "MECANICO"
+                elif "ELECTRICO" in p_norm and "MECANICO" in p_norm and len(p_norm) < 30: nueva_cat = "MIXTO"
+                
+                if nueva_cat:
+                    categoria_actual = nueva_cat
+                    if categoria_actual not in orden_categorias:
+                        orden_categorias.append(categoria_actual)
+                    continue
                     
+                # 2. Atrapar repuestos si están escritos como texto normal
+                if categoria_actual == "REPUESTOS" and "NOTA" not in p_norm and "DIAGNOSTICO" not in p_norm:
+                    if p_text not in repuestos_lista and p_norm not in titulos_basura:
+                        repuestos_lista.append(p_text)
+                    
+                # 3. Extraer Diagnóstico
+                if "DIAGNOSTICO" in p_norm and not diagnostico_extraido:
+                    val = p_text.split(":", 1)[1].strip() if ":" in p_text else p_text
+                    texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', val, flags=re.IGNORECASE)
+                    if texto_limpio: diagnostico_extraido = texto_limpio.strip().upper()
+                
+                # 4. Acumular Notas
+                if "NOTA" in p_norm and "NOTAS" not in p_norm:
+                    val = p_text.split(":", 1)[1].strip() if ":" in p_text else p_text
+                    texto_limpio = re.sub(r'^NOTA\s*[:\-]*\s*', '', val, flags=re.IGNORECASE).strip().upper()
+                    if texto_limpio:
+                        if nota_extraida: nota_extraida += "\n" + texto_limpio
+                        else: nota_extraida = texto_limpio
+                        
+        # --- ESCANEO DE TABLAS ---
         elif element.tag.endswith('tbl'):
             table = docx.table.Table(element, doc_origen)
-            text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
             
-            # Revisar si hay diagnóstico oculto en celdas de tablas
             for row in table.rows:
                 if len(row.cells) >= 2:
                     c0_norm = normalizar_texto(row.cells[0].text)
@@ -507,26 +537,57 @@ async def generar_ficha(
                         texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', c1_text, flags=re.IGNORECASE)
                         diagnostico_extraido = texto_limpio.strip().upper()
 
+            text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
             if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
                 continue
                 
             for row in table.rows:
-                if len(row.cells) >= 2:
-                    t_tarea = row.cells[0].text.strip()
-                    t_estado = row.cells[-1].text.strip()
-                    t_norm = normalizar_texto(t_tarea)
-                    
-                    # Agregamos variaciones mixtas a los títulos basura
-                    titulos_basura = ["OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "MECANICO:", "ELECTRICO:", "ELECTRICO MECANICO", "ELECTRICO - MECANICO:"]
-                    
-                    if len(t_tarea) > 3 and t_norm not in titulos_basura:
-                        # ---> NUEVO: Enviar las tareas a la lista correspondiente <---
-                        if categoria_actual == "MIXTO":
-                            tareas_mixtas.append((t_tarea, t_estado))
-                        elif categoria_actual == "ELECTRICO":
-                            tareas_electricas.append((t_tarea, t_estado))
-                        else:
-                            tareas_mecanicas.append((t_tarea, t_estado))
+                if not row.cells: continue
+                
+                c0_text = row.cells[0].text.strip()
+                c0_norm = normalizar_texto(c0_text)
+                if not c0_text: continue
+                
+                # Detectar cambio de categoría DENTRO de la tabla y registrar el orden
+                nueva_cat_tbl = None
+                if c0_norm == "REPUESTOS": nueva_cat_tbl = "REPUESTOS"
+                elif c0_norm == "ELECTRONICO": nueva_cat_tbl = "ELECTRONICO"
+                elif c0_norm == "NEUMATICO": nueva_cat_tbl = "NEUMATICO"
+                elif c0_norm == "ELECTRICO": nueva_cat_tbl = "ELECTRICO"
+                elif c0_norm == "MECANICO": nueva_cat_tbl = "MECANICO"
+                elif "ELECTRICO" in c0_norm and "MECANICO" in c0_norm and len(c0_norm) < 30: nueva_cat_tbl = "MIXTO"
+
+                if nueva_cat_tbl:
+                    categoria_actual = nueva_cat_tbl
+                    if categoria_actual not in orden_categorias:
+                        orden_categorias.append(categoria_actual)
+                    continue
+
+                if categoria_actual == "REPUESTOS":
+                    if c0_text not in repuestos_lista and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
+                        for item in c0_text.split('\n'):
+                            i_txt = item.strip()
+                            if i_txt and i_txt not in repuestos_lista:
+                                repuestos_lista.append(i_txt)
+                else:
+                    if len(row.cells) >= 2:
+                        t_estado = row.cells[-1].text.strip()
+                        
+                        # ---> NUEVO: AUTO-COMPLETADO INTELIGENTE DE EJECUCIÓN <---
+                        # Si la celda está vacía, o contiene etiquetas basura, forzamos el "OK"
+                        if not t_estado or "<" in t_estado or "TD COLSPAN" in t_estado.upper():
+                            t_estado = "OK"
+                        # Si el técnico escribió "ok", " Ok" o "OK ", lo estandarizamos limpio
+                        elif "OK" in t_estado.upper():
+                            t_estado = "OK"
+                            
+                        if len(c0_text) > 3 and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
+                            if categoria_actual == "MIXTO": tareas_mixtas.append((c0_text, t_estado))
+                            if categoria_actual == "MIXTO": tareas_mixtas.append((c0_text, t_estado))
+                            elif categoria_actual == "ELECTRICO": tareas_electricas.append((c0_text, t_estado))
+                            elif categoria_actual == "ELECTRONICO": tareas_electronicas.append((c0_text, t_estado))
+                            elif categoria_actual == "NEUMATICO": tareas_neumaticas.append((c0_text, t_estado))
+                            elif categoria_actual == "MECANICO": tareas_mecanicas.append((c0_text, t_estado))
 
     diagnostico_final = diagnostico.strip().upper() if diagnostico.strip() else diagnostico_extraido
     nota_final = nota.strip().upper() if nota.strip() else nota_extraida
@@ -749,10 +810,46 @@ async def generar_ficha(
         p_espacio_ops.paragraph_format.space_after = Pt(0)
         p_espacio_ops.add_run().font.size = Pt(4)
 
-    # Construir las tablas de forma independiente (Enviamos el texto sin los dos puntos)
-    construir_tabla_categoria("MECÁNICO", tareas_mecanicas)
-    construir_tabla_categoria("ELÉCTRICO", tareas_electricas)
-    construir_tabla_categoria("ELÉCTRICO - MECÁNICO", tareas_mixtas)
+   # Construir las tablas en el orden exacto en el que aparecieron en el documento original
+    for cat in orden_categorias:
+        if cat == "MECANICO":
+            construir_tabla_categoria("MECÁNICO", tareas_mecanicas)
+        elif cat == "ELECTRICO":
+            construir_tabla_categoria("ELÉCTRICO", tareas_electricas)
+        elif cat == "MIXTO":
+            construir_tabla_categoria("ELÉCTRICO - MECÁNICO", tareas_mixtas)
+        elif cat == "ELECTRONICO":
+            construir_tabla_categoria("ELECTRÓNICO", tareas_electronicas)
+        elif cat == "NEUMATICO":
+            construir_tabla_categoria("NEUMÁTICO", tareas_neumaticas)
+        elif cat == "REPUESTOS" and repuestos_lista:
+            p_rep = doc.add_paragraph()
+            r_rep = p_rep.add_run("REPUESTOS:")
+            r_rep.font.name = 'Calibri'
+            r_rep.font.size = Pt(11)
+            r_rep.bold = True
+            
+            table_rep = doc.add_table(rows=len(repuestos_lista), cols=1)
+            table_rep.style = 'Table Grid'
+            
+            for i, rep in enumerate(repuestos_lista):
+                cell = table_rep.rows[i].cells[0]
+                cell.text = rep
+                
+                p_cell = cell.paragraphs[0]
+                p_cell.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                for run in p_cell.runs:
+                    run.font.name = 'Calibri'
+                    run.font.size = Pt(11)
+                    
+                tcPr = cell._element.get_or_add_tcPr()
+                tcVAlign = OxmlElement('w:vAlign')
+                tcVAlign.set(qn('w:val'), 'center')
+                tcPr.append(tcVAlign)
+                
+            p_espacio_rep = doc.add_paragraph()
+            p_espacio_rep.paragraph_format.space_after = Pt(0)
+            p_espacio_rep.add_run().font.size = Pt(4)
 
     # 5. NOTA FINAL (Calibri 11)
     p_nota = doc.add_paragraph()
