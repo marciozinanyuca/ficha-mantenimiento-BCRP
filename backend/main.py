@@ -589,8 +589,9 @@ async def generar_ficha(
                             elif categoria_actual == "NEUMATICO": tareas_neumaticas.append((c0_text, t_estado))
                             elif categoria_actual == "MECANICO": tareas_mecanicas.append((c0_text, t_estado))
 
-    diagnostico_final = diagnostico.strip().upper() if diagnostico.strip() else diagnostico_extraido
-    nota_final = nota.strip().upper() if nota.strip() else nota_extraida
+    # El formulario web ahora es la autoridad absoluta
+    diagnostico_final = diagnostico.strip().upper()
+    nota_final = nota.strip().upper()
 
     # =================================================================
     # FASE B: CONSTRUCCIÓN MILIMÉTRICA
