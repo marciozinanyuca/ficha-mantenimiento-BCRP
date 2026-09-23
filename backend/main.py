@@ -852,18 +852,18 @@ async def generar_ficha(
             p_espacio_rep.paragraph_format.space_after = Pt(0)
             p_espacio_rep.add_run().font.size = Pt(4)
 
-    # 5. NOTA FINAL (Calibri 11)
-    p_nota = doc.add_paragraph()
-    p_nota.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run_nota_label = p_nota.add_run("NOTA: ")
-    run_nota_label.font.name = 'Calibri'
-    run_nota_label.font.size = Pt(11)
-    run_nota_label.bold = True
-    
-    run_nota_texto = p_nota.add_run(nota_final)
-    run_nota_texto.font.name = 'Calibri'
-    run_nota_texto.font.size = Pt(11)
-
+    # 5. NOTA FINAL (Calibri 11) - Solo se dibuja si hay contenido
+    if nota_final:
+        p_nota = doc.add_paragraph()
+        p_nota.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        run_nota_label = p_nota.add_run("NOTA: ")
+        run_nota_label.font.name = 'Calibri'
+        run_nota_label.font.size = Pt(11)
+        run_nota_label.bold = True
+        
+        run_nota_texto = p_nota.add_run(nota_final)
+        run_nota_texto.font.name = 'Calibri'
+        run_nota_texto.font.size = Pt(11)
     # =================================================================
     # FASE C: EXPORTACIÓN
     # =================================================================
