@@ -3,6 +3,7 @@
 # dependencies (Cubre la raíz, frontend y backend)
 node_modules/
 **/node_modules/
+temp_files/
 .pnp
 .pnp.*
 .yarn/*
