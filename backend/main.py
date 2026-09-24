@@ -471,13 +471,20 @@ async def generar_ficha(
     tareas_neumaticas = []
     repuestos_lista = []
     categoria_actual = "MECANICO"
-    orden_categorias = ["MECANICO"]  # <--- NUEVO: Memoria secuencial del documento original
+    orden_categorias = ["MECANICO"]
     diagnostico_extraido = ""
     nota_extraida = ""
     
+    # NUEVO: Lista ampliada con todas las etiquetas del nuevo formato automatizado
     titulos_basura = [
         "OPERACION", "EJECUCION", "MECANICO", "ELECTRICO", "ELECTRONICO", "NEUMATICO", 
-        "ELECTRICO MECANICO", "REPUESTOS"
+        "ELECTRICO MECANICO", "REPUESTOS",
+        "CODIGO DE LA MAQUINA O EQUIPO", "ORDEN DE TRABAJO OT", "AREA",
+        "TIPO DE MANTENIMIENTO", "TIPO DE EJECUCION", "SERVICIO",
+        "FECHA DE EJECUCION", "HORAS REALES UTILIZADAS", "TECNICO RESPONSABLE",
+        "DIAGNOSTICO DE FALLA", 
+        "OPERACION MECANICO", "OPERACION ELECTRICO", "OPERACION ELECTRONICO", 
+        "OPERACION NEUMATICO", "OPERACION ELECTRICO MECANICO"
     ]
     
     for element in doc_origen.element.body:
@@ -491,14 +498,14 @@ async def generar_ficha(
                 
                 if not p_text: continue
                 
-                # 1. Detectar cambio de categoría y registrar el orden en la memoria
+                # 1. Detectar cambio de categoría (Soporta formato antiguo y nuevo)
                 nueva_cat = None
-                if p_norm == "REPUESTOS": nueva_cat = "REPUESTOS"
-                elif p_norm == "ELECTRONICO": nueva_cat = "ELECTRONICO"
-                elif p_norm == "NEUMATICO": nueva_cat = "NEUMATICO"
-                elif p_norm == "ELECTRICO": nueva_cat = "ELECTRICO"
-                elif p_norm == "MECANICO": nueva_cat = "MECANICO"
-                elif "ELECTRICO" in p_norm and "MECANICO" in p_norm and len(p_norm) < 30: nueva_cat = "MIXTO"
+                if p_norm in ["REPUESTOS", "OPERACION REPUESTOS"]: nueva_cat = "REPUESTOS"
+                elif p_norm in ["ELECTRONICO", "OPERACION ELECTRONICO"]: nueva_cat = "ELECTRONICO"
+                elif p_norm in ["NEUMATICO", "OPERACION NEUMATICO"]: nueva_cat = "NEUMATICO"
+                elif p_norm in ["ELECTRICO", "OPERACION ELECTRICO"]: nueva_cat = "ELECTRICO"
+                elif p_norm in ["MECANICO", "OPERACION MECANICO"]: nueva_cat = "MECANICO"
+                elif "ELECTRICO" in p_norm and "MECANICO" in p_norm and len(p_norm) < 35: nueva_cat = "MIXTO"
                 
                 if nueva_cat:
                     categoria_actual = nueva_cat
@@ -537,6 +544,7 @@ async def generar_ficha(
                         texto_limpio = re.sub(r'^(?:DIAGN[ÓO]STICO(?:\s+DE\s+FALLA)?|DE\s+FALLA)\s*[:\-]*\s*', '', c1_text, flags=re.IGNORECASE)
                         diagnostico_extraido = texto_limpio.strip().upper()
 
+            # Evitar tabla principal de datos generales
             text_tabla = "".join(cell.text.upper() for row in table.rows for cell in row.cells)
             if "ORDEN DE TRABAJO" in text_tabla or "CÓDIGO DE LA MÁQUINA" in text_tabla or "CODIGO DE LA MAQUINA" in text_tabla:
                 continue
@@ -548,14 +556,14 @@ async def generar_ficha(
                 c0_norm = normalizar_texto(c0_text)
                 if not c0_text: continue
                 
-                # Detectar cambio de categoría DENTRO de la tabla y registrar el orden
+                # Detectar cambio de categoría DENTRO de la tabla (Soporta formato antiguo y nuevo)
                 nueva_cat_tbl = None
-                if c0_norm == "REPUESTOS": nueva_cat_tbl = "REPUESTOS"
-                elif c0_norm == "ELECTRONICO": nueva_cat_tbl = "ELECTRONICO"
-                elif c0_norm == "NEUMATICO": nueva_cat_tbl = "NEUMATICO"
-                elif c0_norm == "ELECTRICO": nueva_cat_tbl = "ELECTRICO"
-                elif c0_norm == "MECANICO": nueva_cat_tbl = "MECANICO"
-                elif "ELECTRICO" in c0_norm and "MECANICO" in c0_norm and len(c0_norm) < 30: nueva_cat_tbl = "MIXTO"
+                if c0_norm in ["REPUESTOS", "OPERACION REPUESTOS"]: nueva_cat_tbl = "REPUESTOS"
+                elif c0_norm in ["ELECTRONICO", "OPERACION ELECTRONICO"]: nueva_cat_tbl = "ELECTRONICO"
+                elif c0_norm in ["NEUMATICO", "OPERACION NEUMATICO"]: nueva_cat_tbl = "NEUMATICO"
+                elif c0_norm in ["ELECTRICO", "OPERACION ELECTRICO"]: nueva_cat_tbl = "ELECTRICO"
+                elif c0_norm in ["MECANICO", "OPERACION MECANICO"]: nueva_cat_tbl = "MECANICO"
+                elif "ELECTRICO" in c0_norm and "MECANICO" in c0_norm and len(c0_norm) < 35: nueva_cat_tbl = "MIXTO"
 
                 if nueva_cat_tbl:
                     categoria_actual = nueva_cat_tbl
@@ -564,6 +572,7 @@ async def generar_ficha(
                     continue
 
                 if categoria_actual == "REPUESTOS":
+                    # Si es un repuesto, lo agregamos y lo filtramos para que no sea la palabra "REPUESTOS"
                     if c0_text not in repuestos_lista and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
                         for item in c0_text.split('\n'):
                             i_txt = item.strip()
@@ -573,23 +582,20 @@ async def generar_ficha(
                     if len(row.cells) >= 2:
                         t_estado = row.cells[-1].text.strip()
                         
-                        # ---> NUEVO: AUTO-COMPLETADO INTELIGENTE DE EJECUCIÓN <---
-                        # Si la celda está vacía, o contiene etiquetas basura, forzamos el "OK"
                         if not t_estado or "<" in t_estado or "TD COLSPAN" in t_estado.upper():
                             t_estado = "OK"
-                        # Si el técnico escribió "ok", " Ok" o "OK ", lo estandarizamos limpio
                         elif "OK" in t_estado.upper():
                             t_estado = "OK"
                             
+                        # <-- EL FILTRO MÁGICO: Si el texto está en titulos_basura, lo ignora y no lo agrega como tarea
                         if len(c0_text) > 3 and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
-                            if categoria_actual == "MIXTO": tareas_mixtas.append((c0_text, t_estado))
                             if categoria_actual == "MIXTO": tareas_mixtas.append((c0_text, t_estado))
                             elif categoria_actual == "ELECTRICO": tareas_electricas.append((c0_text, t_estado))
                             elif categoria_actual == "ELECTRONICO": tareas_electronicas.append((c0_text, t_estado))
                             elif categoria_actual == "NEUMATICO": tareas_neumaticas.append((c0_text, t_estado))
                             elif categoria_actual == "MECANICO": tareas_mecanicas.append((c0_text, t_estado))
 
-    # El formulario web ahora es la autoridad absoluta
+    # El formulario web ahora es la autoridad absoluta (como lo configuramos anteriormente)
     diagnostico_final = diagnostico.strip().upper()
     nota_final = nota.strip().upper()
 
