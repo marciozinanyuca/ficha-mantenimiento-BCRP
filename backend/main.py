@@ -175,7 +175,7 @@ def buscar_datos_excel(codigo_buscado):
     if idx_fecha != -1 and pd.notna(fila_encontrada.iloc[idx_fecha]):
         fecha_val = fila_encontrada.iloc[idx_fecha]
         if hasattr(fecha_val, 'month'): 
-            meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SETIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
+            meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]
             try: fecha_str = f"{meses[fecha_val.month - 1]} - {fecha_val.year}"
             except: fecha_str = str(fecha_val).strip().upper()
         else: fecha_str = str(fecha_val).strip().upper()
