@@ -1,0 +1,22 @@
+# Etapa 1: Construcción
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+# Si tu frontend necesita variables públicas en tiempo de compilación, decláralas aquí
+RUN npm run build
+
+# Etapa 2: Ejecución en producción
+FROM node:18-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+ENV PORT=3000
+EXPOSE 3000
+
+CMD ["node", "server.js"]
