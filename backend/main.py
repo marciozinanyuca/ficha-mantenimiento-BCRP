@@ -130,6 +130,7 @@ def buscar_datos_excel(codigo_buscado):
     idx_t1, idx_t2, idx_t3, idx_t4 = -1, -1, -1, -1
     idx_tipo_atencion = -1
     fila_enc = 0
+    columnas_fecha = [] # NUEVO: Historial de todas las fechas
     
     for r, row in df.head(25).iterrows():
         for c, cell in enumerate(row):
@@ -140,8 +141,16 @@ def buscar_datos_excel(codigo_buscado):
             elif 'TECNICO 3' in c_norm and idx_t3 == -1: idx_t3 = c
             elif 'TECNICO 4' in c_norm and idx_t4 == -1: idx_t4 = c
             elif ('HORAS' in c_norm or 'REALES' in c_norm or 'H H' in c_norm) and idx_horas == -1: idx_horas = c
-            elif ('TERMINO' in c_norm or 'FECHA' in c_norm) and idx_fecha == -1: idx_fecha = c
             elif 'ATENCION' in c_norm and idx_tipo_atencion == -1: idx_tipo_atencion = c
+            # ---> NUEVA LÓGICA DE FECHAS <---
+            elif 'TERMINO' in c_norm: 
+                idx_fecha = c
+            elif 'FECHA' in c_norm:
+                columnas_fecha.append(c)
+
+    # Si no encontró la palabra explícita 'TERMINO', asume que es la última 'FECHA' del Excel
+    if idx_fecha == -1 and columnas_fecha:
+        idx_fecha = columnas_fecha[-1]
 
     if idx_maquina == -1: idx_maquina = 1
     if idx_fecha == -1: idx_fecha = 17
