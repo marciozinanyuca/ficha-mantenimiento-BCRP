@@ -66,57 +66,67 @@ def obtener_maquinas_excel():
     return list(dict.fromkeys(maquinas))
 
 def coincidencia_inteligente(hint, lista_maquinas):
-    """Cruza un texto cualquiera con el catálogo del Excel usando IA difusa"""
+    """Cruza un texto cualquiera con el catálogo del Excel usando IA difusa avanzada"""
     hint_norm = normalizar_texto(hint)
     if not hint_norm: return None
-    
-    # 1. Búsqueda exacta
-    for maq in lista_maquinas:
-        if normalizar_texto(maq) == hint_norm: return maq
-        
-    # 2. Si la máquina del Excel ESTÁ DENTRO del texto (Substring exacto)
-    for maq in lista_maquinas:
-        maq_norm = normalizar_texto(maq)
-        if maq_norm and maq_norm in hint_norm: return maq
-        
-    # 3. Si el texto ESTÁ DENTRO de la máquina del Excel
-    for maq in lista_maquinas:
-        maq_norm = normalizar_texto(maq)
-        if maq_norm and hint_norm in maq_norm: return maq
-        
-    # 4. Búsqueda por intersección de palabras (Ideal para códigos extra o desordenados)
-    # Limpiamos los paréntesis para comparar puras palabras sueltas
-    hint_words = set(re.sub(r'[\(\)]', ' ', hint_norm).split())
+
     mejor_maq = None
-    max_score = 0
+    max_score = 0.0
+    
+    # Limpiamos los paréntesis para comparar palabras sueltas puras
+    hint_words = re.sub(r'[\(\)]', ' ', hint_norm).split()
+    if not hint_words: return None
     
     for maq in lista_maquinas:
         maq_norm = normalizar_texto(maq)
-        maq_words = set(re.sub(r'[\(\)]', ' ', maq_norm).split())
+        maq_words = re.sub(r'[\(\)]', ' ', maq_norm).split()
         
-        interseccion = hint_words.intersection(maq_words)
-        
-        # Si comparten al menos 2 palabras clave (ej. "APILADOR" y "ELECTRICO")
-        if len(interseccion) >= 2:
-            # Calculamos qué porcentaje de la máquina del Excel está en el texto
-            score = len(interseccion) / max(len(maq_words), 1)
+        if not maq_words: continue
             
-            # Si acierta al menos el 60% de las palabras y es el mejor hasta ahora
-            if score > max_score and score >= 0.6:
-                max_score = score
-                mejor_maq = maq
-                
-    if mejor_maq:
+        # 1. Coincidencia Exacta (Premio mayor inmediato)
+        if hint_norm == maq_norm:
+            return maq
+            
+        score = 0.0
+        
+        # 2. Si uno está contenido exactamente dentro del otro
+        if hint_norm in maq_norm or maq_norm in hint_norm:
+            min_len = min(len(hint_norm), len(maq_norm))
+            max_len = max(len(hint_norm), len(maq_norm))
+            score = max(score, 0.8 + 0.2 * (min_len / max_len))
+            
+        # 3. Intersección de Palabras Inteligente
+        matches = 0
+        for hw in hint_words:
+            if hw in maq_words:
+                matches += 1
+            elif not hw.isnumeric(): # No adivinar números o códigos, deben ser exactos
+                close = difflib.get_close_matches(hw, maq_words, n=1, cutoff=0.8)
+                if close:
+                    matches += 1
+                    
+        # Calculamos qué tanto del texto buscado está en el Excel
+        score_hint = matches / len(hint_words)
+        # Calculamos qué tanto del Excel fue cubierto
+        score_maq = matches / len(maq_words)
+        
+        # Peso: 75% importa que las palabras que escribiste estén, 25% importa la longitud extra
+        word_score = (score_hint * 0.75) + (score_maq * 0.25)
+        score = max(score, word_score)
+        
+        # 4. Similitud de Secuencia (Para errores de tipeo generales)
+        seq_ratio = difflib.SequenceMatcher(None, hint_norm, maq_norm).ratio()
+        score = max(score, seq_ratio)
+        
+        # Guardar el puntaje más alto encontrado en toda la lista
+        if score > max_score:
+            max_score = score
+            mejor_maq = maq
+            
+    # Retornar el ganador solo si la confianza de la IA es mayor al 60%
+    if max_score >= 0.60:
         return mejor_maq
         
-    # 5. Similitud difusa (Fuzzy Match) para errores de tipeo menores
-    opciones_norm = [normalizar_texto(m) for m in lista_maquinas]
-    matches = difflib.get_close_matches(hint_norm, opciones_norm, n=1, cutoff=0.7)
-    if matches:
-        match_str = matches[0]
-        for maq in lista_maquinas:
-            if normalizar_texto(maq) == match_str: return maq
-            
     return hint # Si falla todo, devuelve el texto original
 
 def buscar_datos_excel(codigo_buscado):
