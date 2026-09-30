@@ -536,8 +536,8 @@ async def generar_ficha(
                     
                 # 2. Atrapar repuestos si están escritos como texto normal
                 if categoria_actual == "REPUESTOS" and "NOTA" not in p_norm and "DIAGNOSTICO" not in p_norm:
-                    if p_text not in repuestos_lista and p_norm not in titulos_basura:
-                        repuestos_lista.append(p_text)
+                    if p_text.upper() not in repuestos_lista and p_norm not in titulos_basura:
+                        repuestos_lista.append(p_text.upper())
                     
                 # 3. Extraer Diagnóstico
                 if "DIAGNOSTICO" in p_norm and not diagnostico_extraido:
@@ -596,9 +596,9 @@ async def generar_ficha(
 
                 if categoria_actual == "REPUESTOS":
                     # Si es un repuesto, lo agregamos y lo filtramos para que no sea la palabra "REPUESTOS"
-                    if c0_text not in repuestos_lista and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
+                    if c0_text.upper() not in repuestos_lista and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
                         for item in c0_text.split('\n'):
-                            i_txt = item.strip()
+                            i_txt = item.strip().upper() # <--- Fuerza repuestos de tabla a mayúscula
                             if i_txt and i_txt not in repuestos_lista:
                                 repuestos_lista.append(i_txt)
                 else:
@@ -610,13 +610,15 @@ async def generar_ficha(
                         elif "OK" in t_estado.upper():
                             t_estado = "OK"
                             
-                        # <-- EL FILTRO MÁGICO
+                        # <-- EL FILTRO MÁGICO Y CONVERSIÓN A MAYÚSCULA
                         if len(c0_text) > 3 and c0_norm not in titulos_basura and "DIAGNOSTICO" not in c0_norm and "NOTA" not in c0_norm:
-                            if categoria_actual == "MIXTO": tareas_mixtas.append((c0_text, t_estado))
-                            elif categoria_actual == "ELECTRICO": tareas_electricas.append((c0_text, t_estado))
-                            elif categoria_actual == "ELECTRONICO": tareas_electronicas.append((c0_text, t_estado))
-                            elif categoria_actual == "NEUMATICO": tareas_neumaticas.append((c0_text, t_estado))
-                            elif categoria_actual == "MECANICO": tareas_mecanicas.append((c0_text, t_estado))
+                            tarea_mayuscula = c0_text.upper() # <--- Transforma la tarea (ej: "Revisión...") a mayúscula absoluta
+                            
+                            if categoria_actual == "MIXTO": tareas_mixtas.append((tarea_mayuscula, t_estado))
+                            elif categoria_actual == "ELECTRICO": tareas_electricas.append((tarea_mayuscula, t_estado))
+                            elif categoria_actual == "ELECTRONICO": tareas_electronicas.append((tarea_mayuscula, t_estado))
+                            elif categoria_actual == "NEUMATICO": tareas_neumaticas.append((tarea_mayuscula, t_estado))
+                            elif categoria_actual == "MECANICO": tareas_mecanicas.append((tarea_mayuscula, t_estado))
 
     # El formulario web ahora es la autoridad absoluta
     diagnostico_final = diagnostico.strip().upper()
