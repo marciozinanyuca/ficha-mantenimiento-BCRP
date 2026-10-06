@@ -26,21 +26,15 @@ jobs:
           npm install
           npm run build --if-present
           
-          # 1. Copiar estáticos al entorno standalone
+          # Copiar estáticos al entorno standalone (Requerido para que Tailwind CSS funcione)
           cp -r .next/static .next/standalone/.next/
           cp -r public .next/standalone/ || true
-          
-          # 2. TRUCO PARA AZURE: Renombrar carpeta oculta a next_build
-          mv .next/standalone/.next .next/standalone/next_build
-          
-          # 3. Engañar al server.js para que use la nueva ruta
-          sed -i 's/".next"/"next_build"/g' .next/standalone/server.js
-          sed -i "s/'.next'/'next_build'/g" .next/standalone/server.js
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
+          # Sube exclusivamente la carpeta standalone ya preparada
           path: ./frontend/.next/standalone
 
   deploy:
