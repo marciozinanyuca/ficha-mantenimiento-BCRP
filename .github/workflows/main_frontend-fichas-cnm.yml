@@ -20,20 +20,27 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm install, build, and test
+      - name: npm install, build, and prep for Azure
         working-directory: ./frontend
         run: |
           npm install
           npm run build --if-present
-          # AÑADIDO: Copia los estilos e imágenes al servidor standalone
+          
+          # 1. Copiar estáticos al entorno standalone
           cp -r .next/static .next/standalone/.next/
           cp -r public .next/standalone/ || true
+          
+          # 2. TRUCO PARA AZURE: Renombrar carpeta oculta a next_build
+          mv .next/standalone/.next .next/standalone/next_build
+          
+          # 3. Engañar al server.js para que use la nueva ruta
+          sed -i 's/".next"/"next_build"/g' .next/standalone/server.js
+          sed -i "s/'.next'/'next_build'/g" .next/standalone/server.js
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          # MODIFICADO: Sube exclusivamente el servidor optimizado a Azure
           path: ./frontend/.next/standalone
 
   deploy:
