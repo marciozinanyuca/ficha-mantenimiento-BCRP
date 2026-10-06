@@ -1,9 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // AÑADIDO: Renombra la carpeta de salida para que Azure la reconozca y no la borre
-  distDir: 'build',
-
   // Habilita la compilación standalone optimizada para contenedores Docker
   output: "standalone",
   
