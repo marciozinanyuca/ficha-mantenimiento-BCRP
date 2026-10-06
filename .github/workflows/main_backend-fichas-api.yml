@@ -12,22 +12,14 @@ jobs:
   deploy-backend:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_67F2910A0F574CB08E844D6F67D5ACD4 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_6FCDC3591232429CB6008328FF1027ED }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_A1B5E549995D4A17BF9A67258BAC80D9 }}
-
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'backend-fichas-api'
-          slot-name: 'Production'
-          package: ./backend # <-- El truco mágico: solo enviamos esta carpeta
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE_BACKEND }}
+          package: ./backend # Mantenemos el truco del monorepo
