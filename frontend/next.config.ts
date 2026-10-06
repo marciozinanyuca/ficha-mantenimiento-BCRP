@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Habilita la compilación standalone optimizada para contenedores Docker
+  // TRUCO DE DEVOPS: Si existe la variable BUILD_DIR (Azure), úsala. Si no (Vercel), usa '.next'.
+  distDir: process.env.BUILD_DIR || '.next',
+  
   output: "standalone",
   
-  // Mantenemos tu configuración para Codespaces (útil para desarrollo)
   allowedDevOrigins: ['127.0.0.1', 'localhost', '.app.github.dev'],
 };
 

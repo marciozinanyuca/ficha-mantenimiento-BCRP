@@ -22,20 +22,21 @@ jobs:
 
       - name: npm install, build, and prep for Azure
         working-directory: ./frontend
+        env:
+          BUILD_DIR: build # <-- Inyectamos la variable solo para Azure
         run: |
           npm install
           npm run build --if-present
           
-          # Copiar estáticos al entorno standalone (Requerido para que Tailwind CSS funcione)
-          cp -r .next/static .next/standalone/.next/
-          cp -r public .next/standalone/ || true
+          # Copiar estáticos a la nueva ruta standalone visible
+          cp -r build/static build/standalone/build/
+          cp -r public build/standalone/ || true
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          # Sube exclusivamente la carpeta standalone ya preparada
-          path: ./frontend/.next/standalone
+          path: ./frontend/build/standalone # <-- Subimos la carpeta lista
 
   deploy:
     runs-on: ubuntu-latest
