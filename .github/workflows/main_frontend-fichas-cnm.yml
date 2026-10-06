@@ -24,7 +24,7 @@ jobs:
         working-directory: ./frontend
         env:
           BUILD_DIR: build # <-- Inyectamos la variable solo para Azure
-          NEXT_PUBLIC_API_URL: "backend-fichas-api.azurewebsites.net"
+          NEXT_PUBLIC_API_URL: "https://backend-fichas-api.azurewebsites.net"
         run: |
           npm install
           npm run build --if-present
