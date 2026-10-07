@@ -1,22 +1,28 @@
-# Etapa 1: Construcción
-FROM node:18-alpine AS builder
+# ETAPA 1: Construcción
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 COPY . .
-# Si tu frontend necesita variables públicas en tiempo de compilación, decláralas aquí
+
+# Permitir que GitHub Actions inyecte la URL de Render o Azure durante la compilación
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 RUN npm run build
 
-# Etapa 2: Ejecución en producción
-FROM node:18-alpine AS runner
+# ETAPA 2: Producción (Servidor limpio)
+FROM node:24-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV production
 
+# Copiar solo la carpeta standalone y los estáticos necesarios
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 
-ENV PORT=3000
 EXPOSE 3000
+ENV PORT 3000
 
+# Arrancar el servidor empaquetado
 CMD ["node", "server.js"]
