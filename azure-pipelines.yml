@@ -1,0 +1,29 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - 'backend/**'
+      - 'azure-pipelines.yml'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Usamos el puente de seguridad que acabas de crear
+  dockerRegistryServiceConnection: 'Conexion-ACR-Fichas'
+  imageRepository: 'backend-fichas-api'
+  tag: 'latest'
+
+steps:
+- task: Docker@2
+  displayName: 'Construir y Subir Imagen del Backend'
+  inputs:
+    command: 'buildAndPush'
+    repository: $(imageRepository)
+    dockerfile: 'backend/Dockerfile'
+    buildContext: 'backend'
+    containerRegistry: $(dockerRegistryServiceConnection)
+    tags: |
+      $(tag)
