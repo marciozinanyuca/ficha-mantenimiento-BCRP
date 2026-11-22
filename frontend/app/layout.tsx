@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   description: "Automatización de fichas técnicas de mantenimiento.",
   applicationName: "Fichas CNM",
   manifest: `${basePath}/manifest.webmanifest`,
-  icons: { apple: `${basePath}/icon-192.png` },
+  icons: { apple: `${basePath}/icon-v2-192.png` },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
