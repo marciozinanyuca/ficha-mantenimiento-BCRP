@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     ? {
         output: "export" as const,
         trailingSlash: true,
-        basePath: "/ficha-mantenimiento-cnm",
+        basePath: "/ficha-mantenimiento-BCRP",
       }
     : { output: "standalone" as const }),
   allowedDevOrigins: ["127.0.0.1", "localhost", ".app.github.dev"],

@@ -35,7 +35,7 @@ jobs:
         working-directory: frontend
         env:
           GITHUB_PAGES: "true"
-          NEXT_PUBLIC_BASE_PATH: /ficha-mantenimiento-cnm
+          NEXT_PUBLIC_BASE_PATH: /ficha-mantenimiento-BCRP
           NEXT_PUBLIC_API_URL: ${{ vars.RENDER_API_URL }}
         run: |
           if [ -z "$NEXT_PUBLIC_API_URL" ]; then
