@@ -20,9 +20,15 @@ warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 app = FastAPI(title="API Fichas de Mantenimiento BCRP")
 
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_URL", "*").split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if "*" in frontend_origins else frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

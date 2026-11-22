@@ -170,6 +170,17 @@ El proyecto está diseñado para desplegarse fácilmente en entornos modernos en
 
 3. Haz clic en **Deploy**.
 
+### GitHub Pages y PWA
+
+El frontend también puede publicarse en GitHub Pages como exportación estática; la configuración existente de Vercel y Azure se conserva. El workflow `.github/workflows/deploy-github-pages.yml` publica desde la rama `main` bajo `/ficha-mantenimiento-cnm/`.
+
+1. En GitHub, abre **Settings → Pages** y selecciona **GitHub Actions** como origen.
+2. En **Settings → Secrets and variables → Actions → Variables**, crea `RENDER_API_URL` con la URL pública del backend de Render, sin `/` al final.
+3. En Render, configura `FRONTEND_URL` con los dominios permitidos separados por comas, por ejemplo `https://marciozinanyuca.github.io,https://tu-dominio-vercel`.
+4. Integra estos cambios en `main` para iniciar el despliegue, o ejecuta manualmente **Deploy frontend to GitHub Pages** desde **Actions**.
+
+La aplicación se puede instalar como PWA y guarda su interfaz básica para abrirla sin conexión. Las operaciones con archivos requieren conexión al backend.
+
 ---
 
 ## ⚙️ Flujo de Funcionamiento

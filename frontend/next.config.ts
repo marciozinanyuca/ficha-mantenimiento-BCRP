@@ -1,12 +1,19 @@
 import type { NextConfig } from "next";
 
+const isGitHubPages = process.env.GITHUB_PAGES === "true";
+
 const nextConfig: NextConfig = {
-  // TRUCO DE DEVOPS: Si existe la variable BUILD_DIR (Azure), úsala. Si no (Vercel), usa '.next'.
-  distDir: process.env.BUILD_DIR || '.next',
-  
-  output: "standalone",
-  
-  allowedDevOrigins: ['127.0.0.1', 'localhost', '.app.github.dev'],
+  // Pages necesita export estático; el resto conserva la salida actual usada
+  // por Vercel y Azure.
+  distDir: process.env.BUILD_DIR || ".next",
+  ...(isGitHubPages
+    ? {
+        output: "export" as const,
+        trailingSlash: true,
+        basePath: "/ficha-mantenimiento-cnm",
+      }
+    : { output: "standalone" as const }),
+  allowedDevOrigins: ["127.0.0.1", "localhost", ".app.github.dev"],
 };
 
 export default nextConfig;
