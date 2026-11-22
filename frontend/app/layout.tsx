@@ -20,7 +20,10 @@ export const metadata: Metadata = {
   description: "Automatización de fichas técnicas de mantenimiento.",
   applicationName: "Fichas CNM",
   manifest: `${basePath}/manifest.webmanifest`,
-  icons: { apple: `${basePath}/icon-v2-192.png` },
+  icons: {
+    icon: `${basePath}/icon-v3-192.png`,
+    apple: `${basePath}/icon-v3-192.png`,
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -29,7 +32,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1A4A5A",
+  themeColor: "#D5EAD8",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

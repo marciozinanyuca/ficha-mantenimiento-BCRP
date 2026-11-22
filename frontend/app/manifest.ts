@@ -13,11 +13,11 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: `${basePath}/`,
     scope: `${basePath}/`,
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#1A4A5A",
+    background_color: "#D5EAD8",
+    theme_color: "#D5EAD8",
     icons: [
-      { src: `${basePath}/icon-v2-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: `${basePath}/icon-v2-512.png`, sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: `${basePath}/icon-v3-192.png`, sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: `${basePath}/icon-v3-512.png`, sizes: "512x512", type: "image/png", purpose: "maskable" },
       { src: `${basePath}/icon.svg`, sizes: "any", type: "image/svg+xml", purpose: "any" },
     ],
   };
