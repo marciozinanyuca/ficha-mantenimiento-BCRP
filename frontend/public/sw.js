@@ -1,4 +1,4 @@
-const CACHE_NAME = "fichas-cnm-v1";
+const CACHE_NAME = "fichas-cnm-v2";
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const APP_SHELL = `${BASE_PATH}/`;
 
